@@ -1,4 +1,4 @@
-﻿{
+{
   "$schema": "https://schema.management.azure.com/schemas/2015-01-01/deploymentTemplate.json#",
   "contentVersion": "1.0.0.0",
   "parameters": {
@@ -10,7 +10,7 @@
     },
     "credentialName": {
       "type": "string",
-      "defaultValue": "DefaultAzureCredential",
+      "defaultValue": "",
       "metadata": {
         "description": "DefaultAzureCredential is the name of the Automation credential used in this runbook. This credential allows you to authenticate to Azure. "
       }
@@ -29,7 +29,7 @@
     },
     "EmailName": {
       "type": "string",
-      "defaultValue": "EmailCredential",
+      "defaultValue": "",
       "metadata": {
         "description": "EmailCredential is the name of the Automation credential used in this runbook for sending email through SendGrid. This credential allows you to authenticate to SendGrid. "
       }
@@ -50,7 +50,7 @@
       "type": "string",
       "allowedValues": [ "eastus2", "japaneast", "southcentralus", "southeastasia", "westeurope", "australiasoutheast", "centralindia" ],
       "metadata": {
-        "description": "Location which the Runbook should be created in."
+        "description": "Location which the Runbook should be created in.  This can be the same as the resource group location of different.  Run books can only be run in these locations."
       }
     }
   },
