@@ -8,3 +8,5 @@ A second credential can be created with any name with your credentials for SendG
 For the $SubscriptionFilter parameter specify a string filter to filter down the list of subscriptions to process such as "*dev*".
 
 You can then schedule this runbook to run as often as you'd like.
+
+After the runbook is deployed you'll need to upgrade the PowerShell module which is included in the Automation account.  Use the instructions <a href="http://blog.coretech.dk/jgs/azure-automation-script-for-downloading-and-preparing-azurerm-modules-for-azure-automation/">here</a> to upgrade the PowerShell modules for the Azure Automation account.  You will need to upgrade the PowerShell module AzureRM.Profile first, then upgrade the rest of the PowerShell modules.
