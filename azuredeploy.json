@@ -1,0 +1,129 @@
+﻿{
+  "$schema": "https://schema.management.azure.com/schemas/2015-01-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "accountName": {
+      "type": "string",
+      "metadata": {
+        "description": "The name of the Azure Automation account to deploy to."
+      }
+    },
+    "credentialName": {
+      "type": "string",
+      "defaultValue": "DefaultAzureCredential",
+      "metadata": {
+        "description": "DefaultAzureCredential is the name of the Automation credential used in this runbook. This credential allows you to authenticate to Azure. "
+      }
+    },
+    "userName": {
+      "type": "string",
+      "metadata": {
+        "description": "The username for the Azure Automation credential."
+      }
+    },
+    "password": {
+      "type": "securestring",
+      "metadata": {
+        "description": "The password for the Azure Automation credential."
+      }
+    },
+    "EmailName": {
+      "type": "string",
+      "defaultValue": "EmailCredential",
+      "metadata": {
+        "description": "EmailCredential is the name of the Automation credential used in this runbook for sending email through SendGrid. This credential allows you to authenticate to SendGrid. "
+      }
+    },
+    "EmailuserName": {
+      "type": "string",
+      "metadata": {
+        "description": "The username for the SendGrid credential."
+      }
+    },
+    "Emailpassword": {
+      "type": "securestring",
+      "metadata": {
+        "description": "The password for the Email credential."
+      }
+    },
+    "RunbookLocation": {
+      "type": "string",
+      "allowedValues": [ "eastus2", "japaneast", "southcentralus", "southeastasia", "westeurope", "australiasoutheast", "centralindia" ],
+      "metadata": {
+        "description": "Location which the Runbook should be created in."
+      }
+    }
+  },
+  "variables": {
+    "runbookName": "ShutdownAzureResources",
+    "scriptUri": "https://raw.githubusercontent.com/DC-AC/ShutdownAzureResources/master/Runbook.ps1",
+    "runbookDescription": "Automatically shutdown (or scale down) Azure resources on a schedule every day.",
+    "sku": "Free"
+  },
+  "resources": [
+    {
+      "name": "[parameters('accountName')]",
+      "type": "Microsoft.Automation/automationAccounts",
+      "apiVersion": "2015-01-01-preview",
+      "location": "[parameters('RunbookLocation')]",
+      "dependsOn": [ ],
+      "tags": { },
+      "properties": {
+        "sku": {
+          "name": "[variables('sku')]"
+        }
+      },
+      "resources": [
+        {
+          "name": "[variables('runbookName')]",
+          "type": "runbooks",
+          "apiVersion": "2015-01-01-preview",
+          "location": "[parameters('RunbookLocation')]",
+          "dependsOn": [
+            "[concat('Microsoft.Automation/automationAccounts/', parameters('accountName'))]"
+          ],
+          "tags": { },
+          "properties": {
+            "runbookType": "Script",
+            "logProgress": "false",
+            "logVerbose": "false",
+            "description": "[variables('runbookDescription')]",
+            "publishContentLink": {
+              "uri": "[variables('scriptUri')]",
+              "version": "1.0.0.0"
+            }
+          }
+        },
+        {
+          "name": "[parameters('EmailName')]",
+          "type": "credentials",
+          "apiVersion": "2015-01-01-preview",
+          "location": "[parameters('RunbookLocation')]",
+          "dependsOn": [
+            "[concat('Microsoft.Automation/automationAccounts/', parameters('accountName'))]"
+          ],
+          "tags": { },
+          "properties": {
+            "userName": "[parameters('EmailuserName')]",
+            "password": "[parameters('Emailpassword')]"
+          }
+        },
+        {
+          "name": "[parameters('credentialName')]",
+          "type": "credentials",
+          "apiVersion": "2015-01-01-preview",
+          "location": "[parameters('RunbookLocation')]",
+          "dependsOn": [
+            "[concat('Microsoft.Automation/automationAccounts/', parameters('accountName'))]"
+          ],
+          "tags": { },
+          "properties": {
+            "userName": "[parameters('userName')]",
+            "password": "[parameters('password')]"
+          }
+        }
+      ]
+    }
+  ],
+  "outputs": { }
+}
