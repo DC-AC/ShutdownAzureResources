@@ -10,7 +10,7 @@ This solutions requires at least one Credential be created within the runbook co
 
 A second credential can be created with any name with your credentials for SendGrid.
 
-For the $SubscriptionFilter parameter specify a string filter to filter down the list of subscriptions to process such as *dev*.
+For the $SubscriptionFilter parameter specify a string filter to filter down the list of subscriptions to process such as "/*dev/*".
 
 You can then schedule this runbook to run as often as you'd like.
 
