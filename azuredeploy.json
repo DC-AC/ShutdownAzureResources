@@ -4,8 +4,18 @@
   "parameters": {
     "accountName": {
       "type": "string",
+      "minLength": 6,
+      "maxLength" :  50,
       "metadata": {
         "description": "The name of the Azure Automation account to deploy to."
+      }
+    },
+    "PricingTier": {
+      "type": "string",
+      "allowedValues": [ "Free", "Basic" ],
+      "defaultValue": "Free",
+      "metadata": {
+        "description": "Pricing tier for the automation account"
       }
     },
     "credentialName": {
@@ -66,12 +76,12 @@
     "runbookName": "ShutdownAzureResources",
     "scriptUri": "https://raw.githubusercontent.com/DC-AC/ShutdownAzureResources/master/Runbook.ps1",
     "runbookDescription": "Automatically shutdown (or scale down) Azure resources on a schedule every day.",
-    "sku": "Free",
+    "sku": "[parameters('PricingTier')]",
     "modules": {
       "AzureRm": {
         "profile": {
-          "moduleName": "AzureRm/profile",
-          "objectName": "[concat(parameters('accountName'), '/AzureRm/profile')]",
+          "moduleName": "AzureRm.profile",
+          "objectName": "[concat(parameters('accountName'), '/AzureRm.profile')]",
           "moduleURI": "[concat(parameters('PowerShellModuleURI'), '/AzureRm.profile.zip')]"
         }
       },
@@ -146,7 +156,7 @@
           }
         },
         {
-          "name": "[variables('modules').AzureRm.profile.moduleName]",
+          "name": "[variables('modules').AzureRm.profile.objectName]",
           "type": "microsoft.automation/automationAccounts/Modules",
           "apiVersion": "2015-01-01-preview",
           "tags": { },
@@ -160,7 +170,7 @@
           }
         },
         {
-          "name": "[variables('modules').Azure.moduleName]",
+          "name": "[variables('modules').Azure.objectName]",
           "type": "microsoft.automation/automationAccounts/Modules",
           "apiVersion": "2015-01-01-preview",
           "tags": { },
