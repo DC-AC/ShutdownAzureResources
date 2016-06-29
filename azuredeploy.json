@@ -20,7 +20,7 @@
       "metadata": {
         "description": "The username for the Azure Automation credential."
       }
-    },
+    }, 
     "password": {
       "type": "securestring",
       "metadata": {
