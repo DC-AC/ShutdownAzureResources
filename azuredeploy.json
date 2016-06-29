@@ -46,6 +46,14 @@
         "description": "The password for the Email credential."
       }
     },
+    "PowerShellModuleURI": {
+      "type": "string",
+      "defaultValue": "https://poshautomation.blob.core.windows.net/v150/",
+      "metadata": {
+        "description": "URI to get the updated PowerShell modules from.  URI must end with a slash (/)."
+      }
+    },
+
     "RunbookLocation": {
       "type": "string",
       "allowedValues": [ "eastus2", "japaneast", "southcentralus", "southeastasia", "westeurope", "australiasoutheast", "centralindia" ],
@@ -121,7 +129,51 @@
             "userName": "[parameters('userName')]",
             "password": "[parameters('password')]"
           }
+        },
+        {
+          "name": "automationAccountName/AzureRm.Profile",
+          "type": "microsoft.automation/automationAccounts/Modules",
+          "apiVersion": "2015-01-01-preview",
+          "tags": { },
+          "dependsOn": [
+            "[concat('Microsoft.Automation/automationAccounts/', parameters('accountName'))]"
+          ],
+          "properties": {
+            "contentLink": {
+              "uri": "[concat(parameters('PowerShellModuleURI'), 'AzureRm.Profile.zip')]"
+            }
+          }
+        },
+        {
+          "name": "[concat(parameters('accountName'), '/AzureRm.profile')]",
+          "type": "microsoft.automation/automationAccounts/Modules",
+          "apiVersion": "2015-01-01-preview",
+          "tags": { },
+          "dependsOn": [
+            "[concat('Microsoft.Automation/automationAccounts/', parameters('accountName'))]"
+          ],
+          "properties": {
+            "contentLink": {
+              "uri": "[concat(parameters('PowerShellModuleURI'), 'AzureRm.profile.zip')]"
+            }
+          }
+        },
+        {
+          "name": "[concat(parameters('accountName'), '/Azure')]",
+          "type": "microsoft.automation/automationAccounts/Modules",
+          "apiVersion": "2015-01-01-preview",
+          "tags": { },
+          "dependsOn": [
+            "[concat('Microsoft.Automation/automationAccounts/', parameters('accountName'))]",
+            "[concat(parameters('accountName'), '/AzureRm.profile')]"
+          ],
+          "properties": {
+            "contentLink": {
+              "uri": "[concat(parameters('PowerShellModuleURI'), 'Azure.zip')]"
+            }
+          }
         }
+
       ]
     }
   ],
