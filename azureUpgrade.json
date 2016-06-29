@@ -1,0 +1,260 @@
+﻿{
+  "$schema": "https://schema.management.azure.com/schemas/2015-01-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "accountName": {
+      "type": "string",
+      "minLength": 6,
+      "maxLength": 50,
+      "metadata": {
+        "description": "The name of the Azure Automation account to deploy to."
+      }
+    },
+    "PowerShellModuleURI": {
+      "type": "string",
+      "defaultValue": "https://poshautomation.blob.core.windows.net/v150",
+      "metadata": {
+        "description": "URI to get the updated PowerShell modules from.  URI must end without a slash (/)."
+      }
+    },
+    "RunbookLocation": {
+      "type": "string",
+      "allowedValues": [ "eastus2", "japaneast", "southcentralus", "southeastasia", "westeurope", "australiasoutheast", "centralindia" ],
+      "metadata": {
+        "description": "Location which the Runbook should be created in.  This can be the same as the resource group location of different.  Run books can only be run in these locations."
+      }
+    }
+  },
+  "variables": {
+    "runbookName": "ShutdownAzureResources",
+    "scriptUri": "https://raw.githubusercontent.com/DC-AC/ShutdownAzureResources/master/Runbook.ps1",
+    "runbookDescription": "Automatically shutdown (or scale down) Azure resources on a schedule every day.",
+    "modules": {
+      "AzureRM": {
+        "profile": {
+          "moduleName": "AzureRM.profile",
+          "objectName": "[concat(parameters('accountName'), '/AzureRM.profile')]",
+          "moduleURI": "[concat(parameters('PowerShellModuleURI'), '/AzureRM.profile.zip')]"
+        },
+        "Resources": {
+          "moduleName": "AzureRM.Resources",
+          "objectName": "[concat(parameters('accountName'), '/AzureRM.Resources')]",
+          "moduleURI": "[concat(parameters('PowerShellModuleURI'), '/AzureRM.Resources.zip')]"
+        },
+        "SQL": {
+          "moduleName": "AzureRM.SQL",
+          "objectName": "[concat(parameters('accountName'), '/AzureRM.SQL')]",
+          "moduleURI": "[concat(parameters('PowerShellModuleURI'), '/AzureRM.Sql.zip')]"
+        },
+        "Storage": {
+          "moduleName": "AzureRM.Storage",
+          "objectName": "[concat(parameters('accountName'), '/AzureRM.Storage')]",
+          "moduleURI": "[concat(parameters('PowerShellModuleURI'), '/AzureRM.Storage.zip')]"
+        },
+        "Compute": {
+          "moduleName": "AzureRM.Compute",
+          "objectName": "[concat(parameters('accountName'), '/AzureRM.Compute')]",
+          "moduleURI": "[concat(parameters('PowerShellModuleURI'), '/AzureRM.Compute.zip')]"
+        },
+        "Automation": {
+          "moduleName": "AzureRM.Automation",
+          "objectName": "[concat(parameters('accountName'), '/AzureRM.Automation')]",
+          "moduleURI": "[concat(parameters('PowerShellModuleURI'), '/AzureRM.Automation.zip')]"
+        },
+        "HDInsight": {
+          "moduleName": "AzureRM.HDInsight",
+          "objectName": "[concat(parameters('accountName'), '/AzureRM.HDInsight')]",
+          "moduleURI": "[concat(parameters('PowerShellModuleURI'), '/AzureRM.HDInsight.zip')]"
+        }
+
+      },
+      "Azure": {
+        "moduleName": "Azure",
+        "objectName": "[concat(parameters('accountName'), '/Azure')]",
+        "moduleURI": "[concat(parameters('PowerShellModuleURI'), '/Azure.zip')]",
+
+        "Storage": {
+          "moduleName": "Azure.Storage",
+          "objectName": "[concat(parameters('accountName'), '/Azure.Storage')]",
+          "moduleURI" :  "[concat(parameters('PowerShellModuleURI'), '/Azure.Storage.zip')]"
+        }
+      }
+
+    }
+  },
+  "resources": [
+    {
+      "name": "[parameters('accountName')]",
+      "type": "Microsoft.Automation/automationAccounts",
+      "apiVersion": "2015-01-01-preview",
+      "location": "[parameters('RunbookLocation')]",
+      "dependsOn": [ ],
+      "tags": { },
+      "resources": [
+        {
+          "name": "[variables('runbookName')]",
+          "type": "runbooks",
+          "apiVersion": "2015-01-01-preview",
+          "location": "[parameters('RunbookLocation')]",
+          "dependsOn": [
+            "[concat('Microsoft.Automation/automationAccounts/', parameters('accountName'))]"
+          ],
+          "tags": { },
+          "properties": {
+            "runbookType": "Script",
+            "logProgress": "false",
+            "logVerbose": "false",
+            "description": "[variables('runbookDescription')]",
+            "publishContentLink": {
+              "uri": "[variables('scriptUri')]",
+              "version": "1.0.0.0"
+            }
+          }
+        },
+        {
+          "name": "[variables('modules').AzureRM.profile.objectName]",
+          "type": "microsoft.automation/automationAccounts/Modules",
+          "apiVersion": "2015-01-01-preview",
+          "tags": { },
+          "dependsOn": [
+            "[concat('Microsoft.Automation/automationAccounts/', parameters('accountName'))]"
+          ],
+          "properties": {
+            "contentLink": {
+              "uri": "[variables('modules').AzureRM.profile.moduleURI]"
+            }
+          }
+        },
+        {
+          "name": "[variables('modules').Azure.objectName]",
+          "type": "microsoft.automation/automationAccounts/Modules",
+          "apiVersion": "2015-01-01-preview",
+          "tags": { },
+          "dependsOn": [
+            "[concat('Microsoft.Automation/automationAccounts/', parameters('accountName'))]",
+            "[variables('modules').AzureRM.profile.moduleName]",
+            "[variables('modules').AzureRM.Automation.moduleName]",
+            "[variables('modules').AzureRM.Compute.moduleName]",
+            "[variables('modules').AzureRM.Resources.moduleName]",
+            "[variables('modules').AzureRM.Storage.moduleName]",
+            "[variables('modules').AzureRM.HDInsight.moduleName]"
+          ],
+          "properties": {
+            "contentLink": {
+              "uri": "[variables('modules').Azure.moduleURI]"
+            }
+          }
+        },
+        {
+          "name": "[variables('modules').Azure.Storage.objectName]",
+          "type": "microsoft.automation/automationAccounts/Modules",
+          "apiVersion": "2015-01-01-preview",
+          "tags": { },
+          "dependsOn": [
+            "[concat('Microsoft.Automation/automationAccounts/', parameters('accountName'))]",
+            "[variables('modules').AzureRM.profile.moduleName]"
+          ],
+          "properties": {
+            "contentLink": {
+              "uri": "[variables('modules').Azure.Storage.moduleURI]"
+            }
+          }
+        },
+        {
+          "name": "[variables('modules').AzureRM.Automation.objectName]",
+          "type": "microsoft.automation/automationAccounts/Modules",
+          "apiVersion": "2015-01-01-preview",
+          "tags": { },
+          "dependsOn": [
+            "[concat('Microsoft.Automation/automationAccounts/', parameters('accountName'))]",
+            "[variables('modules').AzureRM.profile.moduleName]"
+          ],
+          "properties": {
+            "contentLink": {
+              "uri": "[variables('modules').AzureRM.Automation.moduleURI]"
+            }
+          }
+        },
+        {
+          "name": "[variables('modules').AzureRM.Compute.objectName]",
+          "type": "microsoft.automation/automationAccounts/Modules",
+          "apiVersion": "2015-01-01-preview",
+          "tags": { },
+          "dependsOn": [
+            "[concat('Microsoft.Automation/automationAccounts/', parameters('accountName'))]",
+            "[variables('modules').AzureRM.profile.moduleName]"
+          ],
+          "properties": {
+            "contentLink": {
+              "uri": "[variables('modules').AzureRM.Compute.moduleURI]"
+            }
+          }
+        },
+        {
+          "name": "[variables('modules').AzureRM.Resources.objectName]",
+          "type": "microsoft.automation/automationAccounts/Modules",
+          "apiVersion": "2015-01-01-preview",
+          "tags": { },
+          "dependsOn": [
+            "[concat('Microsoft.Automation/automationAccounts/', parameters('accountName'))]",
+            "[variables('modules').AzureRM.profile.moduleName]"
+          ],
+          "properties": {
+            "contentLink": {
+              "uri": "[variables('modules').AzureRM.Resources.moduleURI]"
+            }
+          }
+        },
+        {
+          "name": "[variables('modules').AzureRM.Sql.objectName]",
+          "type": "microsoft.automation/automationAccounts/Modules",
+          "apiVersion": "2015-01-01-preview",
+          "tags": { },
+          "dependsOn": [
+            "[concat('Microsoft.Automation/automationAccounts/', parameters('accountName'))]",
+            "[variables('modules').AzureRM.profile.moduleName]"
+          ],
+          "properties": {
+            "contentLink": {
+              "uri": "[variables('modules').AzureRM.Sql.moduleURI]"
+            }
+          }
+        },
+        {
+          "name": "[variables('modules').AzureRM.Storage.objectName]",
+          "type": "microsoft.automation/automationAccounts/Modules",
+          "apiVersion": "2015-01-01-preview",
+          "tags": { },
+          "dependsOn": [
+            "[concat('Microsoft.Automation/automationAccounts/', parameters('accountName'))]",
+            "[variables('modules').AzureRM.profile.moduleName]"
+          ],
+          "properties": {
+            "contentLink": {
+              "uri": "[variables('modules').AzureRM.Storage.moduleURI]"
+            }
+          }
+        },
+        {
+          "name": "[variables('modules').AzureRM.HDInsight.objectName]",
+          "type": "microsoft.automation/automationAccounts/Modules",
+          "apiVersion": "2015-01-01-preview",
+          "tags": { },
+          "dependsOn": [
+            "[concat('Microsoft.Automation/automationAccounts/', parameters('accountName'))]",
+            "[variables('modules').AzureRM.profile.moduleName]"
+          ],
+          "properties": {
+            "contentLink": {
+              "uri": "[variables('modules').AzureRM.HDInsight.moduleURI]"
+            }
+          }
+        }
+
+
+
+      ]
+    }
+  ],
+  "outputs": { }
+}
