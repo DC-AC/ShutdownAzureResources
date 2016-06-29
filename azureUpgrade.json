@@ -7,7 +7,7 @@
       "minLength": 6,
       "maxLength": 50,
       "metadata": {
-        "description": "The name of the Azure Automation account to deploy to."
+        "description": "The name of the Azure Automation account which already contains the runbook."
       }
     },
     "PowerShellModuleURI": {
@@ -21,7 +21,7 @@
       "type": "string",
       "allowedValues": [ "eastus2", "japaneast", "southcentralus", "southeastasia", "westeurope", "australiasoutheast", "centralindia" ],
       "metadata": {
-        "description": "Location which the Runbook should be created in.  This can be the same as the resource group location of different.  Run books can only be run in these locations."
+        "description": "Location which the Runbook already exists in."
       }
     }
   },
