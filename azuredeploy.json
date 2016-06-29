@@ -66,7 +66,22 @@
     "runbookName": "ShutdownAzureResources",
     "scriptUri": "https://raw.githubusercontent.com/DC-AC/ShutdownAzureResources/master/Runbook.ps1",
     "runbookDescription": "Automatically shutdown (or scale down) Azure resources on a schedule every day.",
-    "sku": "Free"
+    "sku": "Free",
+    "modules": {
+      "AzureRm": {
+        "profile": {
+          "moduleName": "AzureRm/profile",
+          "objectName": "[concat(parameters('accountName'), '/AzureRm/profile')]",
+          "moduleURI": "[concat(parameters('PowerShellModuleURI'), '/AzureRm.profile.zip')]"
+        }
+      },
+      "Azure": {
+        "moduleName": "Azure",
+        "objectName": "[concat(parameters('accountName'), '/Azure')]",
+        "moduleURI": "[concat(parameters('PowerShellModuleURI'), '/Azure.zip')]"
+      }
+
+    }
   },
   "resources": [
     {
@@ -131,7 +146,7 @@
           }
         },
         {
-          "name": "automationAccountName/AzureRm.Profile",
+          "name": "[variables('modules').AzureRm.profile.moduleName]",
           "type": "microsoft.automation/automationAccounts/Modules",
           "apiVersion": "2015-01-01-preview",
           "tags": { },
@@ -140,36 +155,22 @@
           ],
           "properties": {
             "contentLink": {
-              "uri": "[concat(parameters('PowerShellModuleURI'), 'AzureRm.Profile.zip')]"
+              "uri": "[variables('modules').AzureRm.profile.moduleURI]"
             }
           }
         },
         {
-          "name": "[concat(parameters('accountName'), '/AzureRm.profile')]",
-          "type": "microsoft.automation/automationAccounts/Modules",
-          "apiVersion": "2015-01-01-preview",
-          "tags": { },
-          "dependsOn": [
-            "[concat('Microsoft.Automation/automationAccounts/', parameters('accountName'))]"
-          ],
-          "properties": {
-            "contentLink": {
-              "uri": "[concat(parameters('PowerShellModuleURI'), 'AzureRm.profile.zip')]"
-            }
-          }
-        },
-        {
-          "name": "[concat(parameters('accountName'), '/Azure')]",
+          "name": "[variables('modules').Azure.moduleName]",
           "type": "microsoft.automation/automationAccounts/Modules",
           "apiVersion": "2015-01-01-preview",
           "tags": { },
           "dependsOn": [
             "[concat('Microsoft.Automation/automationAccounts/', parameters('accountName'))]",
-            "[concat(parameters('accountName'), '/AzureRm.profile')]"
+            "[variables('modules').AzureRm.profile.moduleName]"
           ],
           "properties": {
             "contentLink": {
-              "uri": "[concat(parameters('PowerShellModuleURI'), 'Azure.zip')]"
+              "uri": "[variables('modules').Azure.moduleURI]"
             }
           }
         }
