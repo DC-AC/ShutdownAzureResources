@@ -14,6 +14,6 @@ For the $SubscriptionFilter parameter specify a string filter to filter down the
 
 You can then schedule this runbook to run as often as you'd like.
 
-After the runbook is deployed you'll need to upgrade the PowerShell module which is included in the Automation account.  Use the instructions <a href="http://blog.coretech.dk/jgs/azure-automation-script-for-downloading-and-preparing-azurerm-modules-for-azure-automation/">here</a> to upgrade the PowerShell modules for the Azure Automation account.  You will need to upgrade the PowerShell module AzureRM.Profile first, then upgrade the rest of the PowerShell modules.
+The deployment now automatically upgrades all the PowerShell modules from a static source stored in an Azure Storage Account.  If for some reason the modeles throw errors when being upgraded (it happens for no good reason we can find, and it happens randomly) upgrade the failed modules manually as shown in this <a href="http://blog.coretech.dk/jgs/azure-automation-script-for-downloading-and-preparing-azurerm-modules-for-azure-automation/">blog post</a>.  When you deploy there is a parameter which is set with the URI to get the PowerShell modules from.  You can change this to your own URI if desired.
 
-After upgrading the Azure PowerShell modules you'll need to schedule how often you want the modeule to run using the Runbook Scheduler.  It is recommended to configure it to run nightly.
+After upgrading the Azure PowerShell modules (if needed) you'll need to schedule how often you want the modeule to run using the Runbook Scheduler.  It is recommended to configure it to run nightly.
