@@ -24,3 +24,5 @@ The deployment now automatically upgrades all the PowerShell modules from a stat
 After upgrading the Azure PowerShell modules (if needed) you'll need to schedule how often you want the modeule to run using the Runbook Scheduler.  It is recommended to configure it to run nightly.
 
 If you have deployed this in the past and just wish to upgrade to the latest version use the Upgrade button at the top of this page so avoid having to fill out the various credentials when deploying. Do make sure to select the current Resource Group and the current Region to deploy to.
+
+If you have installed a prior version an update was just putout.  You'll either want to use our upgrade button above, or tell Azure Automation to upgrade your modules to the current version (this feature is pretty new as well).
