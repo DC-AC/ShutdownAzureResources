@@ -21,7 +21,7 @@
     },
     "PowerShellModuleURI": {
       "type": "string",
-      "defaultValue": "https://poshautomation.blob.core.windows.net/v150",
+      "defaultValue": "https://poshautomation.blob.core.windows.net/v350",
       "metadata": {
         "description": "URI to get the updated PowerShell modules from.  URI must end without a slash (/)."
       }
