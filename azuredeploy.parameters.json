@@ -1,4 +1,47 @@
-﻿{
-    "$schema": "https://schema.management.azure.com/schemas/2015-01-01/deploymentParameters.json#",
-    "contentVersion": "1.0.0.0"
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "automationAccountName": {
+      "value": "shutdown-azure-resources"
+    },
+    "sku": {
+      "value": "Free"
+    },
+    "dryRun": {
+      "value": true
+    },
+    "subscriptionIds": {
+      "value": []
+    },
+    "exemptTagName": {
+      "value": "env"
+    },
+    "exemptTagValue": {
+      "value": "production"
+    },
+    "resourceExemptTagName": {
+      "value": "CostOptimizerExempt"
+    },
+    "createSchedule": {
+      "value": true
+    },
+    "scheduleFrequency": {
+      "value": "Day"
+    },
+    "scheduleTimeOfDay": {
+      "value": "19:00:00"
+    },
+    "scheduleTimeZone": {
+      "value": "Etc/UTC"
+    },
+    "assignSubscriptionRole": {
+      "value": true
+    },
+    "tags": {
+      "value": {
+        "workload": "cost-optimization"
+      }
+    }
+  }
 }

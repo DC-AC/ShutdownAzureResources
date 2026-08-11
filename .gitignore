@@ -1,0 +1,13 @@
+# Local parameter files that may carry subscription IDs or environment specifics
+*.local.bicepparam
+*.local.parameters.json
+
+# Deployment output
+*.deployment.json
+whatif-*.txt
+
+# Editor / OS noise
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

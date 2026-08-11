@@ -1,342 +1,523 @@
 {
-  "$schema": "https://schema.management.azure.com/schemas/2015-01-01/deploymentTemplate.json#",
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
   "contentVersion": "1.0.0.0",
+  "metadata": {
+    "_generator": {
+      "name": "bicep",
+      "version": "0.36.177.2456",
+      "templateHash": "11275535226057985382"
+    },
+    "description": "Deploys the ShutdownAzureResources cost-optimizer runbook into an Azure Automation\naccount: a PowerShell 7.2 runbook, the Az modules it needs, a managed identity, an\noptional daily schedule, and an optional Contributor role assignment.\n"
+  },
   "parameters": {
-    "accountName": {
+    "automationAccountName": {
       "type": "string",
       "minLength": 6,
-      "maxLength" :  50,
+      "maxLength": 50,
       "metadata": {
-        "description": "The name of the Azure Automation account to deploy to."
+        "description": "Name of the Azure Automation account to create or update."
       }
     },
-    "PricingTier": {
+    "location": {
       "type": "string",
-      "allowedValues": [ "Free", "Basic" ],
+      "defaultValue": "[resourceGroup().location]",
+      "metadata": {
+        "description": "Region for the Automation account. Defaults to the resource group location."
+      }
+    },
+    "sku": {
+      "type": "string",
       "defaultValue": "Free",
+      "allowedValues": [
+        "Free",
+        "Basic"
+      ],
       "metadata": {
-        "description": "Pricing tier for the automation account"
+        "description": "Automation account pricing tier. Free includes 500 job minutes/month, which\nis normally enough for one nightly run. Basic bills per minute beyond that."
       }
     },
-    "credentialName": {
+    "disableLocalAuth": {
+      "type": "bool",
+      "defaultValue": true,
+      "metadata": {
+        "description": "Disable local (key-based) authentication on the Automation account. Leave true\nunless you need classic webhook or agent-registration keys; Entra ID auth is unaffected."
+      }
+    },
+    "publicNetworkAccess": {
+      "type": "bool",
+      "defaultValue": true,
+      "metadata": {
+        "description": "Allow the Automation account to be reached over the public internet. Set false only when using Private Link plus a Hybrid Runbook Worker."
+      }
+    },
+    "tags": {
+      "type": "object",
+      "defaultValue": {},
+      "metadata": {
+        "description": "Tags applied to the Automation account."
+      }
+    },
+    "userAssignedIdentityResourceId": {
       "type": "string",
+      "defaultValue": "",
       "metadata": {
-        "description": "DefaultAzureCredential is the name of the Automation credential used in this runbook. This credential allows you to authenticate to Azure. "
+        "description": "Resource ID of an existing user-assigned managed identity. Leave empty to\ncreate and use a system-assigned identity instead."
       }
     },
-    "userName": {
+    "assignSubscriptionRole": {
+      "type": "bool",
+      "defaultValue": true,
+      "metadata": {
+        "description": "Assign a subscription-scope role to the runbook identity. Requires the deploying\nprincipal to be Owner or User Access Administrator. Set false to grant access yourself\nafterwards (see README)."
+      }
+    },
+    "roleDefinitionId": {
       "type": "string",
+      "defaultValue": "b24988ac-6180-42a0-ab88-20f7382dd24c",
       "metadata": {
-        "description": "The username for the Azure Automation credential."
+        "description": "Role definition GUID granted to the identity at subscription scope. Defaults to Contributor."
       }
     },
-    "password": {
-      "type": "securestring",
-      "metadata": {
-        "description": "The password for the Azure Automation credential."
-      }
-    },
-    "EmailName": {
+    "runbookName": {
       "type": "string",
-      "minLength": 0,
+      "defaultValue": "ShutdownAzureResources",
       "metadata": {
-        "description": "EmailCredential is the name of the Automation credential used in this runbook for sending email through SendGrid. This credential allows you to authenticate to SendGrid. "
+        "description": "Name of the runbook inside the Automation account."
       }
     },
-    "EmailuserName": {
+    "runbookScriptUri": {
       "type": "string",
-      "minLength": 0,
+      "defaultValue": "https://raw.githubusercontent.com/DC-AC/ShutdownAzureResources/master/Runbook.ps1",
       "metadata": {
-        "description": "The username for the SendGrid credential."
+        "description": "URI the runbook content is published from."
       }
     },
-    "Emailpassword": {
-      "type": "securestring",
-      "minLength": 0,
-      "metadata": {
-        "description": "The password for the Email credential."
-      }
-    },
-    "PowerShellModuleURI": {
+    "runbookContentVersion": {
       "type": "string",
-      "defaultValue": "https://poshautomation.blob.core.windows.net/v350",
+      "defaultValue": "2.0.0.0",
       "metadata": {
-        "description": "URI to get the updated PowerShell modules from.  URI must end without a slash (/)."
+        "description": "Content version stamped on the runbook. Bump this when redeploying so Azure\nAutomation re-fetches the script from runbookScriptUri."
       }
     },
-
-    "RunbookLocation": {
-      "type": "string",
-      "allowedValues": [ "eastus2", "japaneast", "southcentralus", "southeastasia", "westeurope", "australiasoutheast", "centralindia" ],
+    "logVerbose": {
+      "type": "bool",
+      "defaultValue": false,
       "metadata": {
-        "description": "Location which the Runbook should be created in.  This can be the same as the resource group location of different.  Run books can only be run in these locations."
+        "description": "Write verbose streams to the job log. Useful while tuning, noisy in steady state."
+      }
+    },
+    "logProgress": {
+      "type": "bool",
+      "defaultValue": false,
+      "metadata": {
+        "description": "Write progress records to the job log."
+      }
+    },
+    "dryRun": {
+      "type": "bool",
+      "defaultValue": true,
+      "metadata": {
+        "description": "SAFETY: when true the runbook reports what it would do and changes nothing.\nDeploy with true, read one job output, then redeploy with false."
+      }
+    },
+    "subscriptionIds": {
+      "type": "array",
+      "defaultValue": [],
+      "metadata": {
+        "description": "Subscription IDs to process. Empty means every enabled subscription the identity can see."
+      }
+    },
+    "exemptTagName": {
+      "type": "string",
+      "defaultValue": "env",
+      "metadata": {
+        "description": "Resource groups and resources carrying this tag name/value pair are never touched."
+      }
+    },
+    "exemptTagValue": {
+      "type": "string",
+      "defaultValue": "production"
+    },
+    "resourceExemptTagName": {
+      "type": "string",
+      "defaultValue": "CostOptimizerExempt",
+      "metadata": {
+        "description": "Per-resource opt-out tag. Any resource tagged with this name and a value of true/yes/1 is skipped."
+      }
+    },
+    "runbookParameterOverrides": {
+      "type": "object",
+      "defaultValue": {},
+      "metadata": {
+        "description": "Any other Runbook.ps1 parameter, merged into the scheduled job. Use this for\nthe feature switches and tuning knobs, for example:\n  { DeleteOldSnapshots: 'true', TargetDiskSku: 'Standard_LRS', UnattachedDiskMinAgeDays: '14' }\nAzure Automation parses each value as JSON, so booleans must be the literals 'true' or\n'false' and numbers must be unquoted digits."
+      }
+    },
+    "createSchedule": {
+      "type": "bool",
+      "defaultValue": true,
+      "metadata": {
+        "description": "Create a recurring schedule for the runbook."
+      }
+    },
+    "createJobSchedule": {
+      "type": "bool",
+      "defaultValue": true,
+      "metadata": {
+        "description": "Link the runbook to the schedule.\n\nAzure Automation job schedules are NOT idempotent in ARM. Redeploying a template that\ncontains one fails with \"A job schedule for the specified runbook and schedule already\nexists\", and using a fresh GUID does not help because the conflict is on the\nrunbook-plus-schedule pair, not the name.\n\nSo: leave this true for the first deployment, and set it false on every redeployment into an\naccount that already has the link. To change the runbook parameters afterwards, re-register\nthe link instead of redeploying (see the README \"Going live\" section)."
+      }
+    },
+    "scheduleName": {
+      "type": "string",
+      "defaultValue": "Nightly-Shutdown",
+      "metadata": {
+        "description": "Name of the schedule resource."
+      }
+    },
+    "scheduleFrequency": {
+      "type": "string",
+      "defaultValue": "Day",
+      "allowedValues": [
+        "Hour",
+        "Day",
+        "Week",
+        "Month"
+      ],
+      "metadata": {
+        "description": "How often the runbook runs."
+      }
+    },
+    "scheduleInterval": {
+      "type": "int",
+      "defaultValue": 1,
+      "minValue": 1,
+      "metadata": {
+        "description": "Interval between runs, in units of scheduleFrequency."
+      }
+    },
+    "scheduleTimeOfDay": {
+      "type": "string",
+      "defaultValue": "19:00:00",
+      "metadata": {
+        "description": "Wall-clock time of day for the first run, as HH:mm:ss, interpreted in\nscheduleTimeZone. Defaults to 19:00 the day after deployment."
+      }
+    },
+    "scheduleTimeZone": {
+      "type": "string",
+      "defaultValue": "Etc/UTC",
+      "metadata": {
+        "description": "IANA time zone the schedule runs in, for example America/New_York. Etc/UTC\nkeeps the run time fixed year-round; a named zone follows daylight saving."
+      }
+    },
+    "scheduleStartTime": {
+      "type": "string",
+      "defaultValue": "",
+      "metadata": {
+        "description": "Explicit ISO-8601 start time. Leave empty to start one full period after\ndeployment, which is always safely in the future."
+      }
+    },
+    "baseTime": {
+      "type": "string",
+      "defaultValue": "[utcNow('yyyy-MM-dd')]",
+      "metadata": {
+        "description": "Do not edit. Used to compute a schedule start time in the future."
+      }
+    },
+    "powerShellModules": {
+      "type": "array",
+      "defaultValue": [
+        {
+          "name": "Az.Accounts",
+          "version": "5.5.2"
+        },
+        {
+          "name": "Az.Resources",
+          "version": "10.1.0"
+        },
+        {
+          "name": "Az.Compute",
+          "version": "11.8.0"
+        },
+        {
+          "name": "Az.Sql",
+          "version": "7.0.0"
+        },
+        {
+          "name": "Az.Network",
+          "version": "8.1.0"
+        },
+        {
+          "name": "Az.Storage",
+          "version": "9.7.2"
+        },
+        {
+          "name": "Az.Monitor",
+          "version": "8.0.0"
+        },
+        {
+          "name": "Az.Websites",
+          "version": "4.0.0"
+        },
+        {
+          "name": "Az.Aks",
+          "version": "7.2.1"
+        },
+        {
+          "name": "Az.ContainerInstance",
+          "version": "5.0.0"
+        },
+        {
+          "name": "Az.Synapse",
+          "version": "3.3.0"
+        }
+      ],
+      "metadata": {
+        "description": "Az modules imported into the PowerShell 7.2 runtime, as objects of the shape\n{ name: 'Az.Compute', version: '11.8.0' }. Leave a version empty to pull the latest from the\nPowerShell Gallery; pin it for reproducible deployments. Az.Accounts is always imported\nfirst regardless of its position in this array.\n\nDeclared as a plain array rather than a user-defined type on purpose: user-defined types\nforce the compiled template to languageVersion 2.0, which the portal \"Deploy to Azure\"\nbutton does not reliably accept."
+      }
+    },
+    "logAnalyticsWorkspaceId": {
+      "type": "string",
+      "defaultValue": "",
+      "metadata": {
+        "description": "Resource ID of a Log Analytics workspace to send job logs and streams to. Empty disables diagnostics."
       }
     }
   },
   "variables": {
-    "runbookName": "ShutdownAzureResources",
-    "scriptUri": "https://raw.githubusercontent.com/DC-AC/ShutdownAzureResources/master/Runbook.ps1",
-    "runbookDescription": "Automatically shutdown (or scale down) Azure resources on a schedule every day.",
-    "sku": "[parameters('PricingTier')]",
-    "modules": {
-      "AzureRM": {
-        "profile": {
-          "moduleName": "AzureRM.profile",
-          "objectName": "[concat(parameters('accountName'), '/AzureRM.profile')]",
-          "moduleURI": "[concat(parameters('PowerShellModuleURI'), '/AzureRM.profile.zip')]"
-        },
-        "Resources": {
-          "moduleName": "AzureRM.Resources",
-          "objectName": "[concat(parameters('accountName'), '/AzureRM.Resources')]",
-          "moduleURI": "[concat(parameters('PowerShellModuleURI'), '/AzureRM.Resources.zip')]"
-        },
-        "SQL": {
-          "moduleName": "AzureRM.SQL",
-          "objectName": "[concat(parameters('accountName'), '/AzureRM.SQL')]",
-          "moduleURI": "[concat(parameters('PowerShellModuleURI'), '/AzureRM.Sql.zip')]"
-        },
-        "Storage": {
-          "moduleName": "AzureRM.Storage",
-          "objectName": "[concat(parameters('accountName'), '/AzureRM.Storage')]",
-          "moduleURI": "[concat(parameters('PowerShellModuleURI'), '/AzureRM.Storage.zip')]"
-        },
-        "Compute": {
-          "moduleName": "AzureRM.Compute",
-          "objectName": "[concat(parameters('accountName'), '/AzureRM.Compute')]",
-          "moduleURI": "[concat(parameters('PowerShellModuleURI'), '/AzureRM.Compute.zip')]"
-        },
-        "Automation": {
-          "moduleName": "AzureRM.Automation",
-          "objectName": "[concat(parameters('accountName'), '/AzureRM.Automation')]",
-          "moduleURI": "[concat(parameters('PowerShellModuleURI'), '/AzureRM.Automation.zip')]"
-        },
-        "HDInsight": {
-          "moduleName": "AzureRM.HDInsight",
-          "objectName": "[concat(parameters('accountName'), '/AzureRM.HDInsight')]",
-          "moduleURI": "[concat(parameters('PowerShellModuleURI'), '/AzureRM.HDInsight.zip')]"
-        }
-
-      },
-      "Azure": {
-        "moduleName": "Azure",
-        "objectName": "[concat(parameters('accountName'), '/Azure')]",
-        "moduleURI": "[concat(parameters('PowerShellModuleURI'), '/Azure.zip')]",
-
-        "Storage": {
-          "moduleName": "Azure.Storage",
-          "objectName": "[concat(parameters('accountName'), '/Azure.Storage')]",
-          "moduleURI" :  "[concat(parameters('PowerShellModuleURI'), '/Azure.Storage.zip')]"
-        }
-      }
-
-    }
+    "useUserAssigned": "[not(empty(parameters('userAssignedIdentityResourceId')))]",
+    "orderedModules": "[concat(filter(parameters('powerShellModules'), lambda('m', equals(lambdaVariables('m').name, 'Az.Accounts'))), filter(parameters('powerShellModules'), lambda('m', not(equals(lambdaVariables('m').name, 'Az.Accounts')))))]",
+    "galleryRoot": "https://www.powershellgallery.com/api/v2/package",
+    "computedStartTime": "[dateTimeAdd(format('{0}T{1}Z', parameters('baseTime'), parameters('scheduleTimeOfDay')), 'P1D')]",
+    "effectiveStartTime": "[if(empty(parameters('scheduleStartTime')), variables('computedStartTime'), parameters('scheduleStartTime'))]"
   },
   "resources": [
     {
-      "name": "[parameters('accountName')]",
       "type": "Microsoft.Automation/automationAccounts",
-      "apiVersion": "2015-01-01-preview",
-      "location": "[parameters('RunbookLocation')]",
-      "dependsOn": [ ],
-      "tags": { },
+      "apiVersion": "2023-11-01",
+      "name": "[parameters('automationAccountName')]",
+      "location": "[parameters('location')]",
+      "tags": "[parameters('tags')]",
+      "identity": "[if(variables('useUserAssigned'), createObject('type', 'UserAssigned', 'userAssignedIdentities', createObject(format('{0}', parameters('userAssignedIdentityResourceId')), createObject())), createObject('type', 'SystemAssigned'))]",
       "properties": {
         "sku": {
-          "name": "[variables('sku')]"
+          "name": "[parameters('sku')]"
+        },
+        "disableLocalAuth": "[parameters('disableLocalAuth')]",
+        "publicNetworkAccess": "[parameters('publicNetworkAccess')]"
+      }
+    },
+    {
+      "copy": {
+        "name": "azModules",
+        "count": "[length(variables('orderedModules'))]",
+        "mode": "serial",
+        "batchSize": 1
+      },
+      "type": "Microsoft.Automation/automationAccounts/powerShell72Modules",
+      "apiVersion": "2023-11-01",
+      "name": "[format('{0}/{1}', parameters('automationAccountName'), variables('orderedModules')[copyIndex()].name)]",
+      "properties": {
+        "contentLink": {
+          "uri": "[if(empty(variables('orderedModules')[copyIndex()].version), format('{0}/{1}', variables('galleryRoot'), variables('orderedModules')[copyIndex()].name), format('{0}/{1}/{2}', variables('galleryRoot'), variables('orderedModules')[copyIndex()].name, variables('orderedModules')[copyIndex()].version))]",
+          "version": "[if(empty(variables('orderedModules')[copyIndex()].version), null(), variables('orderedModules')[copyIndex()].version)]"
         }
       },
-      "resources": [
-        {
-          "name": "[variables('runbookName')]",
-          "type": "runbooks",
-          "apiVersion": "2015-01-01-preview",
-          "location": "[parameters('RunbookLocation')]",
-          "dependsOn": [
-            "[concat('Microsoft.Automation/automationAccounts/', parameters('accountName'))]"
-          ],
-          "tags": { },
-          "properties": {
-            "runbookType": "Script",
-            "logProgress": "false",
-            "logVerbose": "false",
-            "description": "[variables('runbookDescription')]",
-            "publishContentLink": {
-              "uri": "[variables('scriptUri')]",
-              "version": "1.0.0.0"
+      "dependsOn": [
+        "[resourceId('Microsoft.Automation/automationAccounts', parameters('automationAccountName'))]"
+      ]
+    },
+    {
+      "type": "Microsoft.Automation/automationAccounts/runbooks",
+      "apiVersion": "2023-11-01",
+      "name": "[format('{0}/{1}', parameters('automationAccountName'), parameters('runbookName'))]",
+      "location": "[parameters('location')]",
+      "tags": "[parameters('tags')]",
+      "properties": {
+        "runbookType": "PowerShell72",
+        "logProgress": "[parameters('logProgress')]",
+        "logVerbose": "[parameters('logVerbose')]",
+        "description": "Automatically shut down, scale down, and clean up non-production Azure resources.",
+        "publishContentLink": {
+          "uri": "[parameters('runbookScriptUri')]",
+          "version": "[parameters('runbookContentVersion')]"
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Automation/automationAccounts', parameters('automationAccountName'))]"
+      ]
+    },
+    {
+      "condition": "[parameters('createSchedule')]",
+      "type": "Microsoft.Automation/automationAccounts/schedules",
+      "apiVersion": "2023-11-01",
+      "name": "[format('{0}/{1}', parameters('automationAccountName'), parameters('scheduleName'))]",
+      "properties": {
+        "description": "[format('Recurring trigger for {0}.', parameters('runbookName'))]",
+        "startTime": "[variables('effectiveStartTime')]",
+        "frequency": "[parameters('scheduleFrequency')]",
+        "interval": "[parameters('scheduleInterval')]",
+        "timeZone": "[parameters('scheduleTimeZone')]"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Automation/automationAccounts', parameters('automationAccountName'))]"
+      ]
+    },
+    {
+      "condition": "[and(parameters('createSchedule'), parameters('createJobSchedule'))]",
+      "type": "Microsoft.Automation/automationAccounts/jobSchedules",
+      "apiVersion": "2023-11-01",
+      "name": "[format('{0}/{1}', parameters('automationAccountName'), guid(resourceId('Microsoft.Automation/automationAccounts', parameters('automationAccountName')), parameters('runbookName'), parameters('scheduleName')))]",
+      "properties": {
+        "runbook": {
+          "name": "[parameters('runbookName')]"
+        },
+        "schedule": {
+          "name": "[parameters('scheduleName')]"
+        },
+        "parameters": "[union(createObject('DryRun', if(parameters('dryRun'), 'true', 'false'), 'SubscriptionIds', string(parameters('subscriptionIds')), 'ExemptTagName', parameters('exemptTagName'), 'ExemptTagValue', parameters('exemptTagValue'), 'ResourceExemptTagName', parameters('resourceExemptTagName'), 'UserAssignedIdentityClientId', if(variables('useUserAssigned'), reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', split(parameters('userAssignedIdentityResourceId'), '/')[2], split(parameters('userAssignedIdentityResourceId'), '/')[4]), 'Microsoft.ManagedIdentity/userAssignedIdentities', last(split(parameters('userAssignedIdentityResourceId'), '/'))), '2023-01-31').clientId, '')), parameters('runbookParameterOverrides'))]"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Automation/automationAccounts', parameters('automationAccountName'))]",
+        "azModules",
+        "[resourceId('Microsoft.Automation/automationAccounts/runbooks', parameters('automationAccountName'), parameters('runbookName'))]",
+        "[resourceId('Microsoft.Automation/automationAccounts/schedules', parameters('automationAccountName'), parameters('scheduleName'))]"
+      ]
+    },
+    {
+      "condition": "[not(empty(parameters('logAnalyticsWorkspaceId')))]",
+      "type": "Microsoft.Insights/diagnosticSettings",
+      "apiVersion": "2021-05-01-preview",
+      "scope": "[format('Microsoft.Automation/automationAccounts/{0}', parameters('automationAccountName'))]",
+      "name": "send-to-log-analytics",
+      "properties": {
+        "workspaceId": "[parameters('logAnalyticsWorkspaceId')]",
+        "logs": [
+          {
+            "category": "JobLogs",
+            "enabled": true
+          },
+          {
+            "category": "JobStreams",
+            "enabled": true
+          }
+        ],
+        "metrics": [
+          {
+            "category": "AllMetrics",
+            "enabled": true
+          }
+        ]
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Automation/automationAccounts', parameters('automationAccountName'))]"
+      ]
+    },
+    {
+      "condition": "[parameters('assignSubscriptionRole')]",
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2022-09-01",
+      "name": "shutdown-runbook-rbac",
+      "subscriptionId": "[subscription().subscriptionId]",
+      "location": "[resourceGroup().location]",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "principalId": "[if(variables('useUserAssigned'), createObject('value', reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', split(parameters('userAssignedIdentityResourceId'), '/')[2], split(parameters('userAssignedIdentityResourceId'), '/')[4]), 'Microsoft.ManagedIdentity/userAssignedIdentities', last(split(parameters('userAssignedIdentityResourceId'), '/'))), '2023-01-31').principalId), createObject('value', reference(resourceId('Microsoft.Automation/automationAccounts', parameters('automationAccountName')), '2023-11-01', 'full').identity.principalId))]",
+          "roleDefinitionId": {
+            "value": "[parameters('roleDefinitionId')]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2018-05-01/subscriptionDeploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.36.177.2456",
+              "templateHash": "13239403158777247020"
+            },
+            "description": "Grants a role to the runbook identity at subscription scope."
+          },
+          "parameters": {
+            "principalId": {
+              "type": "string",
+              "metadata": {
+                "description": "Object (principal) ID of the managed identity the runbook runs as."
+              }
+            },
+            "roleDefinitionId": {
+              "type": "string",
+              "defaultValue": "b24988ac-6180-42a0-ab88-20f7382dd24c",
+              "metadata": {
+                "description": "Role definition GUID to grant. Defaults to Contributor."
+              }
             }
-          }
-        },
-        {
-          "name": "[parameters('EmailName')]",
-          "type": "credentials",
-          "apiVersion": "2015-01-01-preview",
-          "location": "[parameters('RunbookLocation')]",
-          "dependsOn": [
-            "[concat('Microsoft.Automation/automationAccounts/', parameters('accountName'))]"
-          ],
-          "tags": { },
-          "properties": {
-            "userName": "[parameters('EmailuserName')]",
-            "password": "[parameters('Emailpassword')]"
-          }
-        },
-        {
-          "name": "[parameters('credentialName')]",
-          "type": "credentials",
-          "apiVersion": "2015-01-01-preview",
-          "location": "[parameters('RunbookLocation')]",
-          "dependsOn": [
-            "[concat('Microsoft.Automation/automationAccounts/', parameters('accountName'))]"
-          ],
-          "tags": { },
-          "properties": {
-            "userName": "[parameters('userName')]",
-            "password": "[parameters('password')]"
-          }
-        },
-        {
-          "name": "[variables('modules').AzureRM.profile.objectName]",
-          "type": "microsoft.automation/automationAccounts/Modules",
-          "apiVersion": "2015-01-01-preview",
-          "tags": { },
-          "dependsOn": [
-            "[concat('Microsoft.Automation/automationAccounts/', parameters('accountName'))]"
-          ],
-          "properties": {
-            "contentLink": {
-              "uri": "[variables('modules').AzureRM.profile.moduleURI]"
+          },
+          "resources": [
+            {
+              "type": "Microsoft.Authorization/roleAssignments",
+              "apiVersion": "2022-04-01",
+              "name": "[guid(subscription().id, parameters('principalId'), parameters('roleDefinitionId'))]",
+              "properties": {
+                "principalId": "[parameters('principalId')]",
+                "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', parameters('roleDefinitionId'))]",
+                "principalType": "ServicePrincipal"
+              }
             }
-          }
-        },
-        {
-          "name": "[variables('modules').Azure.objectName]",
-          "type": "microsoft.automation/automationAccounts/Modules",
-          "apiVersion": "2015-01-01-preview",
-          "tags": { },
-          "dependsOn": [
-            "[concat('Microsoft.Automation/automationAccounts/', parameters('accountName'))]",
-            "[variables('modules').AzureRM.profile.moduleName]",
-            "[variables('modules').AzureRM.Automation.moduleName]",
-            "[variables('modules').AzureRM.Compute.moduleName]",
-            "[variables('modules').AzureRM.Resources.moduleName]",
-            "[variables('modules').AzureRM.Storage.moduleName]",
-            "[variables('modules').AzureRM.HDInsight.moduleName]"
           ],
-          "properties": {
-            "contentLink": {
-              "uri": "[variables('modules').Azure.moduleURI]"
-            }
-          }
-        },
-        {
-          "name": "[variables('modules').Azure.Storage.objectName]",
-          "type": "microsoft.automation/automationAccounts/Modules",
-          "apiVersion": "2015-01-01-preview",
-          "tags": { },
-          "dependsOn": [
-            "[concat('Microsoft.Automation/automationAccounts/', parameters('accountName'))]",
-            "[variables('modules').AzureRM.profile.moduleName]"
-          ],
-          "properties": {
-            "contentLink": {
-              "uri": "[variables('modules').Azure.Storage.moduleURI]"
-            }
-          }
-        },
-        {
-          "name": "[variables('modules').AzureRM.Automation.objectName]",
-          "type": "microsoft.automation/automationAccounts/Modules",
-          "apiVersion": "2015-01-01-preview",
-          "tags": { },
-          "dependsOn": [
-            "[concat('Microsoft.Automation/automationAccounts/', parameters('accountName'))]",
-            "[variables('modules').AzureRM.profile.moduleName]"
-          ],
-          "properties": {
-            "contentLink": {
-              "uri": "[variables('modules').AzureRM.Automation.moduleURI]"
-            }
-          }
-        },
-        {
-          "name": "[variables('modules').AzureRM.Compute.objectName]",
-          "type": "microsoft.automation/automationAccounts/Modules",
-          "apiVersion": "2015-01-01-preview",
-          "tags": { },
-          "dependsOn": [
-            "[concat('Microsoft.Automation/automationAccounts/', parameters('accountName'))]",
-            "[variables('modules').AzureRM.profile.moduleName]"
-          ],
-          "properties": {
-            "contentLink": {
-              "uri": "[variables('modules').AzureRM.Compute.moduleURI]"
-            }
-          }
-        },
-        {
-          "name": "[variables('modules').AzureRM.Resources.objectName]",
-          "type": "microsoft.automation/automationAccounts/Modules",
-          "apiVersion": "2015-01-01-preview",
-          "tags": { },
-          "dependsOn": [
-            "[concat('Microsoft.Automation/automationAccounts/', parameters('accountName'))]",
-            "[variables('modules').AzureRM.profile.moduleName]"
-          ],
-          "properties": {
-            "contentLink": {
-              "uri": "[variables('modules').AzureRM.Resources.moduleURI]"
-            }
-          }
-        },
-        {
-          "name": "[variables('modules').AzureRM.Sql.objectName]",
-          "type": "microsoft.automation/automationAccounts/Modules",
-          "apiVersion": "2015-01-01-preview",
-          "tags": { },
-          "dependsOn": [
-            "[concat('Microsoft.Automation/automationAccounts/', parameters('accountName'))]",
-            "[variables('modules').AzureRM.profile.moduleName]"
-          ],
-          "properties": {
-            "contentLink": {
-              "uri": "[variables('modules').AzureRM.Sql.moduleURI]"
-            }
-          }
-        },
-        {
-          "name": "[variables('modules').AzureRM.Storage.objectName]",
-          "type": "microsoft.automation/automationAccounts/Modules",
-          "apiVersion": "2015-01-01-preview",
-          "tags": { },
-          "dependsOn": [
-            "[concat('Microsoft.Automation/automationAccounts/', parameters('accountName'))]",
-            "[variables('modules').AzureRM.profile.moduleName]"
-          ],
-          "properties": {
-            "contentLink": {
-              "uri": "[variables('modules').AzureRM.Storage.moduleURI]"
-            }
-          }
-        },
-        {
-          "name": "[variables('modules').AzureRM.HDInsight.objectName]",
-          "type": "microsoft.automation/automationAccounts/Modules",
-          "apiVersion": "2015-01-01-preview",
-          "tags": { },
-          "dependsOn": [
-            "[concat('Microsoft.Automation/automationAccounts/', parameters('accountName'))]",
-            "[variables('modules').AzureRM.profile.moduleName]"
-          ],
-          "properties": {
-            "contentLink": {
-              "uri": "[variables('modules').AzureRM.HDInsight.moduleURI]"
+          "outputs": {
+            "roleAssignmentId": {
+              "type": "string",
+              "metadata": {
+                "description": "Resource ID of the created role assignment."
+              },
+              "value": "[subscriptionResourceId('Microsoft.Authorization/roleAssignments', guid(subscription().id, parameters('principalId'), parameters('roleDefinitionId')))]"
             }
           }
         }
-
-
-
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Automation/automationAccounts', parameters('automationAccountName'))]"
       ]
     }
   ],
-  "outputs": { }
+  "outputs": {
+    "runbookPrincipalId": {
+      "type": "string",
+      "metadata": {
+        "description": "Object ID of the identity the runbook authenticates as. Grant this access to any additional subscriptions."
+      },
+      "value": "[if(variables('useUserAssigned'), reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', split(parameters('userAssignedIdentityResourceId'), '/')[2], split(parameters('userAssignedIdentityResourceId'), '/')[4]), 'Microsoft.ManagedIdentity/userAssignedIdentities', last(split(parameters('userAssignedIdentityResourceId'), '/'))), '2023-01-31').principalId, reference(resourceId('Microsoft.Automation/automationAccounts', parameters('automationAccountName')), '2023-11-01', 'full').identity.principalId)]"
+    },
+    "automationAccountName": {
+      "type": "string",
+      "metadata": {
+        "description": "Name of the deployed Automation account."
+      },
+      "value": "[parameters('automationAccountName')]"
+    },
+    "runbookName": {
+      "type": "string",
+      "metadata": {
+        "description": "Name of the deployed runbook."
+      },
+      "value": "[parameters('runbookName')]"
+    },
+    "firstScheduledRun": {
+      "type": "string",
+      "metadata": {
+        "description": "UTC timestamp of the first scheduled run, or empty when no schedule was created."
+      },
+      "value": "[if(parameters('createSchedule'), variables('effectiveStartTime'), '')]"
+    },
+    "dryRun": {
+      "type": "bool",
+      "metadata": {
+        "description": "Whether the runbook will run in report-only mode."
+      },
+      "value": "[parameters('dryRun')]"
+    }
+  }
 }

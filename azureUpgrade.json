@@ -1,279 +1,171 @@
 {
-  "$schema": "https://schema.management.azure.com/schemas/2015-01-01/deploymentTemplate.json#",
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
   "contentVersion": "1.0.0.0",
-
+  "metadata": {
+    "_generator": {
+      "name": "bicep",
+      "version": "0.36.177.2456",
+      "templateHash": "205408063668293474"
+    },
+    "description": "Refreshes the runbook script and its Az modules on an Automation account that already\nexists. Touches nothing else: identity, schedules, and role assignments are left as they\nare. Use this for routine version bumps; use main.bicep for a first deployment.\n"
+  },
   "parameters": {
-    "accountName": {
+    "automationAccountName": {
       "type": "string",
       "minLength": 6,
       "maxLength": 50,
       "metadata": {
-        "description": "The name of the Azure Automation account to deploy to."
+        "description": "Name of the existing Azure Automation account."
       }
     },
-    "PricingTier": {
+    "location": {
       "type": "string",
-      "allowedValues": [ "Free", "Basic" ],
-      "defaultValue": "Free",
+      "defaultValue": "[resourceGroup().location]",
       "metadata": {
-        "description": "Pricing tier for the automation account"
+        "description": "Region of the existing Automation account. Defaults to the resource group location."
       }
     },
-    "PowerShellModuleURI": {
+    "runbookName": {
       "type": "string",
-      "defaultValue": "https://poshautomation.blob.core.windows.net/v350",
+      "defaultValue": "ShutdownAzureResources",
       "metadata": {
-        "description": "URI to get the updated PowerShell modules from.  URI must end without a slash (/)."
+        "description": "Name of the runbook to refresh."
       }
     },
-    "RunbookLocation": {
+    "runbookScriptUri": {
       "type": "string",
-      "allowedValues": [ "eastus2", "japaneast", "southcentralus", "southeastasia", "westeurope", "australiasoutheast", "centralindia" ],
+      "defaultValue": "https://raw.githubusercontent.com/DC-AC/ShutdownAzureResources/master/Runbook.ps1",
       "metadata": {
-        "description": "Location which the Runbook should be created in.  This can be the same as the resource group location of different.  Run books can only be run in these locations."
+        "description": "URI the runbook content is published from."
+      }
+    },
+    "runbookContentVersion": {
+      "type": "string",
+      "defaultValue": "2.0.0.0",
+      "metadata": {
+        "description": "Content version stamped on the runbook. This must change for Azure Automation\nto re-fetch the script, so bump it on every upgrade."
+      }
+    },
+    "logVerbose": {
+      "type": "bool",
+      "defaultValue": false,
+      "metadata": {
+        "description": "Write verbose streams to the job log."
+      }
+    },
+    "logProgress": {
+      "type": "bool",
+      "defaultValue": false,
+      "metadata": {
+        "description": "Write progress records to the job log."
+      }
+    },
+    "powerShellModules": {
+      "type": "array",
+      "defaultValue": [
+        {
+          "name": "Az.Accounts",
+          "version": "5.5.2"
+        },
+        {
+          "name": "Az.Resources",
+          "version": "10.1.0"
+        },
+        {
+          "name": "Az.Compute",
+          "version": "11.8.0"
+        },
+        {
+          "name": "Az.Sql",
+          "version": "7.0.0"
+        },
+        {
+          "name": "Az.Network",
+          "version": "8.1.0"
+        },
+        {
+          "name": "Az.Storage",
+          "version": "9.7.2"
+        },
+        {
+          "name": "Az.Monitor",
+          "version": "8.0.0"
+        },
+        {
+          "name": "Az.Websites",
+          "version": "4.0.0"
+        },
+        {
+          "name": "Az.Aks",
+          "version": "7.2.1"
+        },
+        {
+          "name": "Az.ContainerInstance",
+          "version": "5.0.0"
+        },
+        {
+          "name": "Az.Synapse",
+          "version": "3.3.0"
+        }
+      ],
+      "metadata": {
+        "description": "Az modules to re-import, as objects of the shape\n{ name: 'Az.Compute', version: '11.8.0' }. Leave a version empty to pull the latest from the\nPowerShell Gallery; pin it for reproducible deployments."
       }
     }
   },
-
   "variables": {
-    "runbookName": "ShutdownAzureResources",
-    "scriptUri": "https://raw.githubusercontent.com/DC-AC/ShutdownAzureResources/master/Runbook.ps1",
-    "runbookDescription": "Automatically shutdown (or scale down) Azure resources on a schedule every day.",
-    "sku": "[parameters('PricingTier')]",
-    "modules": {
-      "AzureRM": {
-        "profile": {
-          "moduleName": "AzureRM.profile",
-          "objectName": "[concat(parameters('accountName'), '/AzureRM.profile')]",
-          "moduleURI": "[concat(parameters('PowerShellModuleURI'), '/AzureRM.profile.zip')]"
-        },
-        "Resources": {
-          "moduleName": "AzureRM.Resources",
-          "objectName": "[concat(parameters('accountName'), '/AzureRM.Resources')]",
-          "moduleURI": "[concat(parameters('PowerShellModuleURI'), '/AzureRM.Resources.zip')]"
-        },
-        "SQL": {
-          "moduleName": "AzureRM.SQL",
-          "objectName": "[concat(parameters('accountName'), '/AzureRM.SQL')]",
-          "moduleURI": "[concat(parameters('PowerShellModuleURI'), '/AzureRM.Sql.zip')]"
-        },
-        "Storage": {
-          "moduleName": "AzureRM.Storage",
-          "objectName": "[concat(parameters('accountName'), '/AzureRM.Storage')]",
-          "moduleURI": "[concat(parameters('PowerShellModuleURI'), '/AzureRM.Storage.zip')]"
-        },
-        "Compute": {
-          "moduleName": "AzureRM.Compute",
-          "objectName": "[concat(parameters('accountName'), '/AzureRM.Compute')]",
-          "moduleURI": "[concat(parameters('PowerShellModuleURI'), '/AzureRM.Compute.zip')]"
-        },
-        "Automation": {
-          "moduleName": "AzureRM.Automation",
-          "objectName": "[concat(parameters('accountName'), '/AzureRM.Automation')]",
-          "moduleURI": "[concat(parameters('PowerShellModuleURI'), '/AzureRM.Automation.zip')]"
-        },
-        "HDInsight": {
-          "moduleName": "AzureRM.HDInsight",
-          "objectName": "[concat(parameters('accountName'), '/AzureRM.HDInsight')]",
-          "moduleURI": "[concat(parameters('PowerShellModuleURI'), '/AzureRM.HDInsight.zip')]"
-        }
-
-      },
-      "Azure": {
-        "moduleName": "Azure",
-        "objectName": "[concat(parameters('accountName'), '/Azure')]",
-        "moduleURI": "[concat(parameters('PowerShellModuleURI'), '/Azure.zip')]",
-
-        "Storage": {
-          "moduleName": "Azure.Storage",
-          "objectName": "[concat(parameters('accountName'), '/Azure.Storage')]",
-          "moduleURI": "[concat(parameters('PowerShellModuleURI'), '/Azure.Storage.zip')]"
-        }
-      }
-
-    }
+    "orderedModules": "[concat(filter(parameters('powerShellModules'), lambda('m', equals(lambdaVariables('m').name, 'Az.Accounts'))), filter(parameters('powerShellModules'), lambda('m', not(equals(lambdaVariables('m').name, 'Az.Accounts')))))]",
+    "galleryRoot": "https://www.powershellgallery.com/api/v2/package"
   },
   "resources": [
     {
-      "name": "[parameters('accountName')]",
-      "type": "Microsoft.Automation/automationAccounts",
-      "apiVersion": "2015-01-01-preview",
-      "location": "[parameters('RunbookLocation')]",
-      "dependsOn": [ ],
-      "tags": { },
+      "copy": {
+        "name": "azModules",
+        "count": "[length(variables('orderedModules'))]",
+        "mode": "serial",
+        "batchSize": 1
+      },
+      "type": "Microsoft.Automation/automationAccounts/powerShell72Modules",
+      "apiVersion": "2023-11-01",
+      "name": "[format('{0}/{1}', parameters('automationAccountName'), variables('orderedModules')[copyIndex()].name)]",
       "properties": {
-        "sku": {
-          "name": "[variables('sku')]"
-        },
-        "resources": [
-          {
-            "name": "[variables('runbookName')]",
-            "type": "runbooks",
-            "apiVersion": "2015-01-01-preview",
-            "location": "[parameters('RunbookLocation')]",
-            "dependsOn": [
-              "[concat('Microsoft.Automation/automationAccounts/', parameters('accountName'))]"
-            ],
-            "tags": { },
-            "properties": {
-              "runbookType": "Script",
-              "logProgress": "false",
-              "logVerbose": "false",
-              "description": "[variables('runbookDescription')]",
-              "publishContentLink": {
-                "uri": "[variables('scriptUri')]",
-                "version": "1.0.0.0"
-              }
-            }
-          },
-          {
-            "name": "[variables('modules').AzureRM.profile.objectName]",
-            "type": "microsoft.automation/automationAccounts/Modules",
-            "apiVersion": "2015-01-01-preview",
-            "tags": { },
-            "dependsOn": [
-              "[concat('Microsoft.Automation/automationAccounts/', parameters('accountName'))]"
-            ],
-            "properties": {
-              "contentLink": {
-                "uri": "[variables('modules').AzureRM.profile.moduleURI]"
-              }
-            }
-          },
-          {
-            "name": "[variables('modules').Azure.objectName]",
-            "type": "microsoft.automation/automationAccounts/Modules",
-            "apiVersion": "2015-01-01-preview",
-            "tags": { },
-            "dependsOn": [
-              "[concat('Microsoft.Automation/automationAccounts/', parameters('accountName'))]",
-              "[variables('modules').AzureRM.profile.moduleName]",
-              "[variables('modules').AzureRM.Automation.moduleName]",
-              "[variables('modules').AzureRM.Compute.moduleName]",
-              "[variables('modules').AzureRM.Resources.moduleName]",
-              "[variables('modules').AzureRM.Storage.moduleName]",
-              "[variables('modules').AzureRM.HDInsight.moduleName]"
-            ],
-            "properties": {
-              "contentLink": {
-                "uri": "[variables('modules').Azure.moduleURI]"
-              }
-            }
-          },
-          {
-            "name": "[variables('modules').Azure.Storage.objectName]",
-            "type": "microsoft.automation/automationAccounts/Modules",
-            "apiVersion": "2015-01-01-preview",
-            "tags": { },
-            "dependsOn": [
-              "[concat('Microsoft.Automation/automationAccounts/', parameters('accountName'))]",
-              "[variables('modules').AzureRM.profile.moduleName]"
-            ],
-            "properties": {
-              "contentLink": {
-                "uri": "[variables('modules').Azure.Storage.moduleURI]"
-              }
-            }
-          },
-          {
-            "name": "[variables('modules').AzureRM.Automation.objectName]",
-            "type": "microsoft.automation/automationAccounts/Modules",
-            "apiVersion": "2015-01-01-preview",
-            "tags": { },
-            "dependsOn": [
-              "[concat('Microsoft.Automation/automationAccounts/', parameters('accountName'))]",
-              "[variables('modules').AzureRM.profile.moduleName]"
-            ],
-            "properties": {
-              "contentLink": {
-                "uri": "[variables('modules').AzureRM.Automation.moduleURI]"
-              }
-            }
-          },
-          {
-            "name": "[variables('modules').AzureRM.Compute.objectName]",
-            "type": "microsoft.automation/automationAccounts/Modules",
-            "apiVersion": "2015-01-01-preview",
-            "tags": { },
-            "dependsOn": [
-              "[concat('Microsoft.Automation/automationAccounts/', parameters('accountName'))]",
-              "[variables('modules').AzureRM.profile.moduleName]"
-            ],
-            "properties": {
-              "contentLink": {
-                "uri": "[variables('modules').AzureRM.Compute.moduleURI]"
-              }
-            }
-          },
-          {
-            "name": "[variables('modules').AzureRM.Resources.objectName]",
-            "type": "microsoft.automation/automationAccounts/Modules",
-            "apiVersion": "2015-01-01-preview",
-            "tags": { },
-            "dependsOn": [
-              "[concat('Microsoft.Automation/automationAccounts/', parameters('accountName'))]",
-              "[variables('modules').AzureRM.profile.moduleName]"
-            ],
-            "properties": {
-              "contentLink": {
-                "uri": "[variables('modules').AzureRM.Resources.moduleURI]"
-              }
-            }
-          },
-          {
-            "name": "[variables('modules').AzureRM.Sql.objectName]",
-            "type": "microsoft.automation/automationAccounts/Modules",
-            "apiVersion": "2015-01-01-preview",
-            "tags": { },
-            "dependsOn": [
-              "[concat('Microsoft.Automation/automationAccounts/', parameters('accountName'))]",
-              "[variables('modules').AzureRM.profile.moduleName]"
-            ],
-            "properties": {
-              "contentLink": {
-                "uri": "[variables('modules').AzureRM.Sql.moduleURI]"
-              }
-            }
-          },
-          {
-            "name": "[variables('modules').AzureRM.Storage.objectName]",
-            "type": "microsoft.automation/automationAccounts/Modules",
-            "apiVersion": "2015-01-01-preview",
-            "tags": { },
-            "dependsOn": [
-              "[concat('Microsoft.Automation/automationAccounts/', parameters('accountName'))]",
-              "[variables('modules').AzureRM.profile.moduleName]"
-            ],
-            "properties": {
-              "contentLink": {
-                "uri": "[variables('modules').AzureRM.Storage.moduleURI]"
-              }
-            }
-          },
-          {
-            "name": "[variables('modules').AzureRM.HDInsight.objectName]",
-            "type": "microsoft.automation/automationAccounts/Modules",
-            "apiVersion": "2015-01-01-preview",
-            "tags": { },
-            "dependsOn": [
-              "[concat('Microsoft.Automation/automationAccounts/', parameters('accountName'))]",
-              "[variables('modules').AzureRM.profile.moduleName]"
-            ],
-            "properties": {
-              "contentLink": {
-                "uri": "[variables('modules').AzureRM.HDInsight.moduleURI]"
-              }
-            }
-          }
-
-
-
-        ]
+        "contentLink": {
+          "uri": "[if(empty(variables('orderedModules')[copyIndex()].version), format('{0}/{1}', variables('galleryRoot'), variables('orderedModules')[copyIndex()].name), format('{0}/{1}/{2}', variables('galleryRoot'), variables('orderedModules')[copyIndex()].name, variables('orderedModules')[copyIndex()].version))]",
+          "version": "[if(empty(variables('orderedModules')[copyIndex()].version), null(), variables('orderedModules')[copyIndex()].version)]"
+        }
       }
-
-
-
+    },
+    {
+      "type": "Microsoft.Automation/automationAccounts/runbooks",
+      "apiVersion": "2023-11-01",
+      "name": "[format('{0}/{1}', parameters('automationAccountName'), parameters('runbookName'))]",
+      "location": "[parameters('location')]",
+      "properties": {
+        "runbookType": "PowerShell72",
+        "logProgress": "[parameters('logProgress')]",
+        "logVerbose": "[parameters('logVerbose')]",
+        "description": "Automatically shut down, scale down, and clean up non-production Azure resources.",
+        "publishContentLink": {
+          "uri": "[parameters('runbookScriptUri')]",
+          "version": "[parameters('runbookContentVersion')]"
+        }
+      }
     }
   ],
-  "outputs": { }
+  "outputs": {
+    "runbookName": {
+      "type": "string",
+      "metadata": {
+        "description": "Name of the refreshed runbook."
+      },
+      "value": "[parameters('runbookName')]"
+    },
+    "runbookContentVersion": {
+      "type": "string",
+      "metadata": {
+        "description": "Content version now published."
+      },
+      "value": "[parameters('runbookContentVersion')]"
+    }
+  }
 }

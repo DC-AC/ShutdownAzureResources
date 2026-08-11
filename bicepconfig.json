@@ -1,0 +1,19 @@
+{
+  "analyzers": {
+    "core": {
+      "enabled": true,
+      "verbose": false,
+      "rules": {
+        "no-unused-params": { "level": "error" },
+        "no-unused-vars": { "level": "error" },
+        "no-unnecessary-dependson": { "level": "error" },
+        "prefer-interpolation": { "level": "error" },
+        "secure-parameter-default": { "level": "error" },
+        "outputs-should-not-contain-secrets": { "level": "error" },
+        "no-hardcoded-env-urls": { "level": "error" },
+        "explicit-values-for-loc-params": { "level": "off" },
+        "no-loc-expr-outside-params": { "level": "off" }
+      }
+    }
+  }
+}

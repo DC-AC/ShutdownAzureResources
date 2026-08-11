@@ -1,0 +1,85 @@
+name: Validate
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  bicep:
+    name: Bicep build and drift check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Bicep
+        run: az bicep install && az bicep version
+
+      - name: Build templates
+        run: |
+          az bicep build --file infra/main.bicep --outfile /tmp/main.json
+          az bicep build --file infra/upgrade.bicep --outfile /tmp/upgrade.json
+          az bicep build-params --file infra/main.bicepparam --outfile /tmp/main.parameters.json
+
+      # azuredeploy.json and azureUpgrade.json are compiled artifacts committed to the
+      # repo root so the portal "Deploy to Azure" buttons keep working. They must never
+      # drift from the Bicep sources. The _generator metadata is stripped because it
+      # carries the Bicep version, which legitimately differs between machines.
+      - name: Check committed ARM templates are in sync
+        run: |
+          strip() { jq 'del(.metadata._generator)' "$1"; }
+          failed=0
+          for pair in "azuredeploy.json:/tmp/main.json" "azureUpgrade.json:/tmp/upgrade.json"; do
+            committed="${pair%%:*}"
+            built="${pair##*:}"
+            if ! diff <(strip "$committed") <(strip "$built") > /dev/null; then
+              echo "::error file=$committed::$committed is out of date. Run 'bicep build' and commit the result."
+              diff <(strip "$committed") <(strip "$built") || true
+              failed=1
+            else
+              echo "$committed is up to date."
+            fi
+          done
+          exit $failed
+
+  powershell:
+    name: PSScriptAnalyzer
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install PSScriptAnalyzer
+        shell: pwsh
+        run: Install-Module PSScriptAnalyzer -Scope CurrentUser -Force -AllowClobber
+
+      # Warnings are surfaced but do not fail the build: the runbook deliberately uses
+      # empty catch blocks for its best-effort reporting passes.
+      - name: Analyze Runbook.ps1
+        shell: pwsh
+        run: |
+          $findings = Invoke-ScriptAnalyzer -Path ./Runbook.ps1 -Severity Error,Warning
+          $findings | Format-Table -AutoSize -Wrap | Out-String -Width 200 | Write-Host
+
+          foreach ($f in $findings) {
+            $level = if ($f.Severity -eq 'Error') { 'error' } else { 'warning' }
+            Write-Host "::${level} file=Runbook.ps1,line=$($f.Line)::$($f.RuleName): $($f.Message)"
+          }
+
+          $errors = @($findings | Where-Object Severity -eq 'Error')
+          if ($errors.Count -gt 0) {
+            throw "PSScriptAnalyzer reported $($errors.Count) error(s)."
+          }
+          Write-Host "No errors. $($findings.Count) warning(s)."
+
+      - name: Check the runbook parses
+        shell: pwsh
+        run: |
+          $errors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile(
+            (Resolve-Path ./Runbook.ps1), [ref]$null, [ref]$errors) | Out-Null
+          if ($errors) { $errors | ForEach-Object { Write-Host $_ }; throw 'Runbook.ps1 failed to parse.' }
+          Write-Host 'Runbook.ps1 parses cleanly.'

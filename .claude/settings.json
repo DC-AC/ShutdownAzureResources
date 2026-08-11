@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(az version *)",
+      "Bash(az bicep *)",
+      "Bash(az provider *)",
+      "Bash(sed 's/2023-11-01/2024-10-23/g' probe.bicep)",
+      "Bash(bicep build *)",
+      "Bash(echo \"2024-10-23 EXIT: $?\")",
+      "Bash(curl -s -o /dev/null -w \"GET unversioned: %{http_code} final=%{url_effective}\\\\n\" -L -r 0-0 \"https://www.powershellgallery.com/api/v2/package/Az.Accounts\")",
+      "Bash(curl -s -o /dev/null -w \"GET versioned:   %{http_code} final=%{url_effective}\\\\n\" -L -r 0-0 \"https://www.powershellgallery.com/api/v2/package/Az.Accounts/5.5.2\")",
+      "Bash(echo \"MAIN EXIT: $?\")",
+      "Bash(echo \"UPGRADE EXIT: $?\")"
+    ]
+  }
+}
