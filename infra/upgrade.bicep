@@ -45,6 +45,7 @@ param powerShellModules array = [
   { name: 'Az.Aks', version: '7.2.1' }
   { name: 'Az.ContainerInstance', version: '5.0.0' }
   { name: 'Az.Synapse', version: '3.3.0' }
+  { name: 'Az.Fabric', version: '1.0.0' }
 ]
 
 // Az.Accounts first; the serial loop below then imports the rest in order behind it.

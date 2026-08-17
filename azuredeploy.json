@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.36.177.2456",
-      "templateHash": "11275535226057985382"
+      "templateHash": "17863277586462725335"
     },
     "description": "Deploys the ShutdownAzureResources cost-optimizer runbook into an Azure Automation\naccount: a PowerShell 7.2 runbook, the Az modules it needs, a managed identity, an\noptional daily schedule, and an optional Contributor role assignment.\n"
   },
@@ -268,6 +268,10 @@
         {
           "name": "Az.Synapse",
           "version": "3.3.0"
+        },
+        {
+          "name": "Az.Fabric",
+          "version": "1.0.0"
         }
       ],
       "metadata": {

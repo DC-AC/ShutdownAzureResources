@@ -46,13 +46,14 @@ Destructive actions are marked ⚠.
 | 6 | Deallocate Azure Firewalls (VNet-based only) | on |
 | 7 | Downsize Azure SQL databases to the cheapest SKU that still fits the data | on |
 | 8 | Suspend Synapse / standalone SQL Data Warehouse pools | on |
-| 9 | Convert Premium managed disks on deallocated VMs to Standard | on |
-| 10 | ⚠ Delete managed disks unattached for more than 7 days | on |
-| 11 | ⚠ Delete unattached public IP addresses | on |
-| 12 | ⚠ Delete App Service Plans hosting zero sites | on |
-| 13 | ⚠ Delete snapshots older than 90 days | **off** |
-| 14 | ⚠ Delete orphaned NICs | **off** |
-| 15 | Report on expensive resources needing a human decision (VPN gateways, Bastion, Redis, Cosmos DB, idle load balancers, premium storage) | always |
+| 9 | Pause running Microsoft Fabric capacities | on |
+| 10 | Convert Premium managed disks on deallocated VMs to Standard | on |
+| 11 | ⚠ Delete managed disks unattached for more than 7 days | on |
+| 12 | ⚠ Delete unattached public IP addresses | on |
+| 13 | ⚠ Delete orphaned NICs | **off** |
+| 14 | ⚠ Delete App Service Plans hosting zero sites | on |
+| 15 | ⚠ Delete snapshots older than 90 days | **off** |
+| 16 | Report on expensive resources needing a human decision (VPN gateways, Bastion, Redis, Cosmos DB, idle load balancers, premium storage) | always |
 
 The SQL pass sizes each database from its actual 12-hour peak storage metric, never moves a
 database *up* a tier, and refuses to touch elastic-pool members or Hyperscale databases —
@@ -200,7 +201,7 @@ Azure Automation parses each value as JSON, so booleans must be the bare literal
 
 Available switches: `StopVirtualMachines`, `StopScaleSets`, `StopAksClusters`,
 `StopContainerInstances`, `StopApplicationGateways`, `DeallocateFirewalls`,
-`DownsizeSqlDatabases`, `SuspendDataWarehouses`, `ConvertDisksToStandard`,
+`DownsizeSqlDatabases`, `SuspendDataWarehouses`, `PauseFabricCapacities`, `ConvertDisksToStandard`,
 `DeleteUnattachedDisks`, `DeleteUnattachedPublicIps`, `DeleteEmptyAppServicePlans`,
 `DeleteOldSnapshots`, `DeleteOrphanedNics`. Tuning knobs: `UnattachedDiskMinAgeDays`,
 `SnapshotMinAgeDays`, `TargetDiskSku`, `DeallocationWaitMinutes`, `UseServerlessForSql`.
@@ -240,8 +241,10 @@ The runbook records restore hints as tags before it changes anything:
 | `costopt-originalSku`, `costopt-originalMaxSizeBytes` | SQL databases, before downsizing |
 | `costopt-originalDiskSku` | Managed disks, before conversion to Standard |
 
-Deletions are not reversible — that is why disk deletion has a minimum age, and snapshot and
-NIC deletion are off by default.
+Resources that were merely stopped are brought back with their usual cmdlets —
+`Start-AzVM`, `Start-AzAksCluster`, `Resume-AzSynapseSqlPool`, `Resume-AzFabricCapacity`, and
+so on. Deletions are not reversible, which is why disk deletion has a minimum age and
+snapshot and NIC deletion are off by default.
 
 ## Repository layout
 
@@ -318,6 +321,12 @@ GitHub Actions runs all of the above on every push and pull request.
   Azure Automation is unreliable when many imports run concurrently.
 - Stopping a web app does **not** reduce App Service Plan cost — the plan is billed. Only
   empty plans are deleted; populated ones are reported so you can scale them down.
+- **Pausing a Fabric capacity takes every workload on it offline** — Power BI reports,
+  lakehouses, warehouses, and notebooks all become unavailable until it is resumed. Storage
+  still bills while paused; only compute stops. Tag any capacity that must stay up.
+  Only capacities in the `Active` state are touched, and Fabric trial capacities are not
+  pausable. Subscriptions without the `Microsoft.Fabric` resource provider registered log a
+  warning and skip the pass.
 - Secured-hub (Virtual WAN) firewalls cannot be deallocated and are reported instead.
 - Ultra and Premium v2 disks cannot be converted in place; they are reported.
 

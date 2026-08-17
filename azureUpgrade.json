@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.36.177.2456",
-      "templateHash": "205408063668293474"
+      "templateHash": "640783926555302831"
     },
     "description": "Refreshes the runbook script and its Az modules on an Automation account that already\nexists. Touches nothing else: identity, schedules, and role assignments are left as they\nare. Use this for routine version bumps; use main.bicep for a first deployment.\n"
   },
@@ -106,6 +106,10 @@
         {
           "name": "Az.Synapse",
           "version": "3.3.0"
+        },
+        {
+          "name": "Az.Fabric",
+          "version": "1.0.0"
         }
       ],
       "metadata": {

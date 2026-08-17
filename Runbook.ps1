@@ -14,13 +14,14 @@
       6.  Deallocate Azure Firewalls (VNet-based only)
       7.  Downsize Azure SQL databases to the cheapest SKU that still fits the data
       8.  Suspend Synapse / standalone SQL Data Warehouse pools
-      9.  Convert Premium managed disks on deallocated VMs to Standard
-     10.  Delete unattached managed disks older than N days
-     11.  Delete unattached public IP addresses
-     12.  Delete empty (zero-site) App Service Plans
-     13.  Optionally delete snapshots older than N days
-     14.  Optionally delete orphaned NICs
-     15.  Report-only pass over expensive resources that need a human decision
+      9.  Pause running Microsoft Fabric capacities
+     10.  Convert Premium managed disks on deallocated VMs to Standard
+     11.  Delete unattached managed disks older than N days
+     12.  Delete unattached public IP addresses
+     13.  Optionally delete orphaned NICs
+     14.  Delete empty (zero-site) App Service Plans
+     15.  Optionally delete snapshots older than N days
+     16.  Report-only pass over expensive resources that need a human decision
 
     EXEMPTIONS
       * Any resource group tagged  env = production  (names/values configurable)
@@ -31,7 +32,7 @@
 .PREREQUISITES
     Modules (import into the Automation Account, 'Az' runtime v2 recommended):
         Az.Accounts, Az.Resources, Az.Compute, Az.Sql, Az.Network, Az.Storage,
-        Az.Monitor, Az.Websites, Az.Aks, Az.ContainerInstance, Az.Synapse
+        Az.Monitor, Az.Websites, Az.Aks, Az.ContainerInstance, Az.Synapse, Az.Fabric
 
     RBAC for the managed identity:
         Contributor at each target subscription (or at a management group).
@@ -77,6 +78,7 @@ param(
     [bool] $DeallocateFirewalls       = $true,
     [bool] $DownsizeSqlDatabases      = $true,
     [bool] $SuspendDataWarehouses     = $true,
+    [bool] $PauseFabricCapacities     = $true,
     [bool] $ConvertDisksToStandard    = $true,
     [bool] $DeleteUnattachedDisks     = $true,
     [bool] $DeleteUnattachedPublicIps = $true,
@@ -602,7 +604,35 @@ foreach ($sub in $subscriptions) {
     }
 
     # ==================================================================
-    #  9. Wait for deallocation, then downgrade attached disks
+    #  9. Microsoft Fabric capacities
+    # ==================================================================
+    if ($PauseFabricCapacities -and (Test-Cmdlet 'Suspend-AzFabricCapacity')) {
+        Write-Log '--- Microsoft Fabric capacities ---'
+        try {
+            # Only 'Active' is safe to suspend; this deliberately skips Paused, Pausing,
+            # Resuming, Scaling, Provisioning and Failed.
+            foreach ($cap in Get-AzFabricCapacity -ErrorAction Stop) {
+                if (Test-IsExempt -ResourceGroupName $cap.ResourceGroupName -Tags $cap.Tag) { continue }
+                if ($cap.State -ne 'Active') { continue }
+
+                $capRg   = $cap.ResourceGroupName
+                $capName = $cap.Name
+                Invoke-CostAction -Type 'FabricCapacity' -Name $capName -ResourceGroup $capRg `
+                    -Action 'Pause' -Detail "SKU $($cap.SkuName), was '$($cap.State)'" -Script {
+                        Suspend-AzFabricCapacity -ResourceGroupName $capRg -CapacityName $capName
+                    }
+            }
+        }
+        catch {
+            # Most subscriptions have never registered Microsoft.Fabric, which surfaces here
+            # as an enumeration failure. That is expected, so it is a warning rather than an
+            # error.
+            Write-Log "Fabric pass skipped: $($_.Exception.Message)" 'WARN'
+        }
+    }
+
+    # ==================================================================
+    # 10. Wait for deallocation, then downgrade attached disks
     # ==================================================================
     if ($ConvertDisksToStandard) {
         Write-Log '--- Waiting for VMs to finish deallocating ---'
@@ -674,7 +704,7 @@ foreach ($sub in $subscriptions) {
     }
 
     # ==================================================================
-    # 10. Unattached managed disks
+    # 11. Unattached managed disks
     # ==================================================================
     if ($DeleteUnattachedDisks) {
         Write-Log '--- Unattached managed disks ---'
@@ -706,7 +736,7 @@ foreach ($sub in $subscriptions) {
     }
 
     # ==================================================================
-    # 11. Unattached public IP addresses
+    # 12. Unattached public IP addresses
     # ==================================================================
     if ($DeleteUnattachedPublicIps) {
         Write-Log '--- Unattached public IPs ---'
@@ -727,7 +757,7 @@ foreach ($sub in $subscriptions) {
     }
 
     # ==================================================================
-    # 12. Orphaned NICs (free, but tidy)
+    # 13. Orphaned NICs (free, but tidy)
     # ==================================================================
     if ($DeleteOrphanedNics) {
         Write-Log '--- Orphaned NICs ---'
@@ -747,7 +777,7 @@ foreach ($sub in $subscriptions) {
     }
 
     # ==================================================================
-    # 13. Empty App Service Plans
+    # 14. Empty App Service Plans
     # ==================================================================
     if ($DeleteEmptyAppServicePlans -and (Test-Cmdlet 'Get-AzAppServicePlan')) {
         Write-Log '--- App Service plans ---'
@@ -772,7 +802,7 @@ foreach ($sub in $subscriptions) {
     }
 
     # ==================================================================
-    # 14. Old snapshots
+    # 15. Old snapshots
     # ==================================================================
     Write-Log '--- Snapshots ---'
     try {
@@ -796,7 +826,7 @@ foreach ($sub in $subscriptions) {
     } catch { Write-Log "Snapshot pass failed: $($_.Exception.Message)" 'ERROR' }
 
     # ==================================================================
-    # 15. Report-only: expensive things that need a human
+    # 16. Report-only: expensive things that need a human
     # ==================================================================
     Write-Log '--- Reporting expensive resources that were not modified ---'
 
