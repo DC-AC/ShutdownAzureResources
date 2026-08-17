@@ -182,6 +182,47 @@ param powerShellModules array = [
 param logAnalyticsWorkspaceId string = ''
 
 // ---------------------------------------------------------------------------
+//  Failure alerting
+// ---------------------------------------------------------------------------
+
+@description('''Raise a metric alert when a job of this runbook ends in a non-success state.
+Needs either alertEmailAddress or existingActionGroupId to have somewhere to send it.''')
+param enableFailureAlert bool = true
+
+@description('Email address notified when a job fails. Ignored when existingActionGroupId is set.')
+param alertEmailAddress string = ''
+
+@description('Resource ID of an action group to notify. Takes precedence over alertEmailAddress.')
+param existingActionGroupId string = ''
+
+@description('Name of the action group created when alertEmailAddress is supplied.')
+param alertActionGroupName string = '${automationAccountName}-alerts'
+
+@description('Short name shown in SMS and email subjects. Azure caps this at 12 characters.')
+@maxLength(12)
+param alertActionGroupShortName string = 'CostOptAlrt'
+
+@description('''Job states that raise the alert. Failed on its own is not enough: a job killed
+by the 3-hour fair-share limit or cancelled by hand reports Stopped, and a runbook that throws
+under the PowerShell Workflow engine lands in Suspended and retries before it ever reaches
+Failed.''')
+param alertOnJobStatuses array = [
+  'Failed'
+  'Stopped'
+  'Suspended'
+]
+
+@description('Alert severity: 0 critical, 1 error, 2 warning, 3 informational, 4 verbose.')
+@allowed([
+  0
+  1
+  2
+  3
+  4
+])
+param alertSeverity int = 1
+
+// ---------------------------------------------------------------------------
 //  Computed
 // ---------------------------------------------------------------------------
 
@@ -201,6 +242,10 @@ var galleryRoot = 'https://www.powershellgallery.com/api/v2/package'
 // time of day can land in the past and Azure rejects start times less than 5 minutes away.
 var computedStartTime = dateTimeAdd('${baseTime}T${scheduleTimeOfDay}Z', 'P1D')
 var effectiveStartTime = empty(scheduleStartTime) ? computedStartTime : scheduleStartTime
+
+var createActionGroup = enableFailureAlert && empty(existingActionGroupId) && !empty(alertEmailAddress)
+var alertActionGroupId = empty(existingActionGroupId) ? (createActionGroup ? actionGroup.id : '') : existingActionGroupId
+var deployFailureAlert = enableFailureAlert && !empty(alertActionGroupId)
 
 // Automation parses these strings as JSON, so booleans and arrays must be JSON literals.
 var runbookJobParameters = {
@@ -335,6 +380,76 @@ resource diagnostics 'Microsoft.Insights/diagnosticSettings@2021-05-01-preview' 
   }
 }
 
+resource actionGroup 'Microsoft.Insights/actionGroups@2023-01-01' = if (createActionGroup) {
+  name: alertActionGroupName
+  location: 'global'
+  tags: tags
+  properties: {
+    groupShortName: alertActionGroupShortName
+    enabled: true
+    emailReceivers: [
+      {
+        name: 'primary'
+        emailAddress: alertEmailAddress
+        useCommonAlertSchema: true
+      }
+    ]
+  }
+}
+
+// Fires on the TotalJob metric split by Status, so one alert covers every non-success
+// state. Evaluated every 5 minutes over a 5-minute window: a nightly runbook does not need
+// per-minute detection, and the wider window keeps a single failure from alerting twice.
+resource jobFailureAlert 'Microsoft.Insights/metricAlerts@2018-03-01' = if (deployFailureAlert) {
+  name: '${automationAccountName}-job-failure'
+  location: 'global'
+  tags: tags
+  properties: {
+    description: 'A ${runbookName} job finished in a state other than Completed.'
+    severity: alertSeverity
+    enabled: true
+    scopes: [
+      automationAccount.id
+    ]
+    evaluationFrequency: 'PT5M'
+    windowSize: 'PT5M'
+    autoMitigate: true
+    criteria: {
+      'odata.type': 'Microsoft.Azure.Monitor.SingleResourceMultipleMetricCriteria'
+      allOf: [
+        {
+          name: 'JobsNotSucceeded'
+          criterionType: 'StaticThresholdCriterion'
+          metricNamespace: 'Microsoft.Automation/automationAccounts'
+          metricName: 'TotalJob'
+          operator: 'GreaterThan'
+          threshold: 0
+          timeAggregation: 'Total'
+          dimensions: [
+            {
+              name: 'Status'
+              operator: 'Include'
+              values: alertOnJobStatuses
+            }
+            {
+              name: 'Runbook'
+              operator: 'Include'
+              values: [
+                runbookName
+              ]
+            }
+          ]
+        }
+      ]
+    }
+    actions: [
+      {
+        actionGroupId: alertActionGroupId
+      }
+    ]
+  }
+}
+
 module subscriptionRoleAssignment 'modules/role-assignment.bicep' = if (assignSubscriptionRole) {
   name: 'shutdown-runbook-rbac'
   scope: subscription()
@@ -366,3 +481,18 @@ output firstScheduledRun string = createSchedule ? effectiveStartTime : ''
 
 @description('Whether the runbook will run in report-only mode.')
 output dryRun bool = dryRun
+
+@description('Resource ID of the job-failure alert rule, or empty when alerting is off.')
+output jobFailureAlertId string = deployFailureAlert ? jobFailureAlert.id : ''
+
+@description('Action group the alert notifies, or empty when alerting is off.')
+output alertActionGroupId string = alertActionGroupId
+
+@description('''Whether failure alerting actually deployed. Checked explicitly because
+enableFailureAlert on its own is not enough: with no email and no action group there is
+nowhere to send the alert, and it would otherwise be skipped silently.''')
+output failureAlertStatus string = deployFailureAlert
+  ? 'Enabled'
+  : (enableFailureAlert
+      ? 'NOT DEPLOYED - supply alertEmailAddress or existingActionGroupId'
+      : 'Disabled - enableFailureAlert is false')

@@ -38,6 +38,18 @@
     "assignSubscriptionRole": {
       "value": true
     },
+    "enableFailureAlert": {
+      "value": true
+    },
+    "alertEmailAddress": {
+      "value": ""
+    },
+    "alertOnJobStatuses": {
+      "value": [ "Failed", "Stopped", "Suspended" ]
+    },
+    "alertSeverity": {
+      "value": 1
+    },
     "tags": {
       "value": {
         "workload": "cost-optimization"

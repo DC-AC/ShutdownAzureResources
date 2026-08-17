@@ -181,6 +181,56 @@ az role assignment create \
 Restrict the scope explicitly with the `subscriptionIds` parameter if you would rather not
 process everything the identity can reach.
 
+## Failure alerting
+
+A cost optimizer that quietly stops working is worse than not having one — the savings
+disappear and nothing tells you. The deployment can create a metric alert that fires when a
+job of this runbook ends in a non-success state:
+
+```bash
+az deployment group create \
+  --resource-group rg-cost-optimizer \
+  --template-file infra/main.bicep \
+  --parameters infra/main.bicepparam \
+  --parameters automationAccountName=shutdown-azure-resources \
+               alertEmailAddress=you@example.com
+```
+
+That creates an action group with your address and a rule on the Automation account's
+**Total Jobs** (`TotalJob`) metric, split by the `Status` dimension and filtered to the
+`Runbook` dimension so other runbooks in the same account do not trip it. Condition is
+`Total > 0` evaluated every 5 minutes over a 5-minute window.
+
+It watches three states, not just `Failed`:
+
+| Status | Why it matters |
+| --- | --- |
+| `Failed` | The ordinary case — the script threw. |
+| `Stopped` | A job killed by the 3-hour fair-share limit, or cancelled by hand. |
+| `Suspended` | Under the PowerShell Workflow engine a thrown error suspends and retries before it ever reaches `Failed`. Harmless to watch on a PowerShell 7.2 runbook. |
+
+To reuse an action group you already have, pass `existingActionGroupId` instead of
+`alertEmailAddress` — it takes precedence.
+
+**Confirm it actually deployed.** `enableFailureAlert` alone is not enough; with no email and
+no action group there is nowhere to send the alert and it is skipped. The deployment reports
+which happened:
+
+```bash
+az deployment group show \
+  --resource-group rg-cost-optimizer --name shutdown-optimizer \
+  --query properties.outputs.failureAlertStatus.value -o tsv
+# Enabled
+# NOT DEPLOYED - supply alertEmailAddress or existingActionGroupId
+# Disabled - enableFailureAlert is false
+```
+
+> This alerts on jobs that **ran and failed**. It cannot tell you the runbook never started —
+> a deleted schedule or an unlinked job schedule produces no metric at all, so there is
+> nothing to threshold. If that matters, add a log alert on the `AzureDiagnostics` table with
+> `logAnalyticsWorkspaceId` set, firing when the count of completed jobs over 24 hours is
+> zero.
+
 ## Tuning the runbook
 
 The deployment wires the common settings (`dryRun`, `subscriptionIds`, the exemption tags)
@@ -227,6 +277,11 @@ Available switches: `StopVirtualMachines`, `StopScaleSets`, `StopAksClusters`,
 | `roleDefinitionId` | Contributor GUID | Swap for a narrower custom role if you have one. |
 | `userAssignedIdentityResourceId` | `''` | Use an existing user-assigned identity instead of system-assigned. |
 | `logAnalyticsWorkspaceId` | `''` | Set to collect `JobLogs` and `JobStreams`. |
+| `enableFailureAlert` | `true` | Alert when a job ends badly. Needs an email or action group — see [Failure alerting](#failure-alerting). |
+| `alertEmailAddress` | `''` | Creates an action group notifying this address. |
+| `existingActionGroupId` | `''` | Reuse an action group you already have. Wins over `alertEmailAddress`. |
+| `alertOnJobStatuses` | `Failed`, `Stopped`, `Suspended` | Job states that raise the alert. |
+| `alertSeverity` | `1` | 0 critical … 4 verbose. |
 | `powerShellModules` | pinned `Az.*` set | Empty version on any entry pulls latest from the gallery. |
 | `disableLocalAuth` | `true` | Blocks key-based auth. Entra ID auth is unaffected. |
 | `runbookContentVersion` | `2.0.0.0` | **Bump this to make Automation re-fetch the script.** |

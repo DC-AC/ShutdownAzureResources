@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.36.177.2456",
-      "templateHash": "17863277586462725335"
+      "templateHash": "12843090040653615381"
     },
     "description": "Deploys the ShutdownAzureResources cost-optimizer runbook into an Azure Automation\naccount: a PowerShell 7.2 runbook, the Az modules it needs, a managed identity, an\noptional daily schedule, and an optional Contributor role assignment.\n"
   },
@@ -284,6 +284,67 @@
       "metadata": {
         "description": "Resource ID of a Log Analytics workspace to send job logs and streams to. Empty disables diagnostics."
       }
+    },
+    "enableFailureAlert": {
+      "type": "bool",
+      "defaultValue": true,
+      "metadata": {
+        "description": "Raise a metric alert when a job of this runbook ends in a non-success state.\nNeeds either alertEmailAddress or existingActionGroupId to have somewhere to send it."
+      }
+    },
+    "alertEmailAddress": {
+      "type": "string",
+      "defaultValue": "",
+      "metadata": {
+        "description": "Email address notified when a job fails. Ignored when existingActionGroupId is set."
+      }
+    },
+    "existingActionGroupId": {
+      "type": "string",
+      "defaultValue": "",
+      "metadata": {
+        "description": "Resource ID of an action group to notify. Takes precedence over alertEmailAddress."
+      }
+    },
+    "alertActionGroupName": {
+      "type": "string",
+      "defaultValue": "[format('{0}-alerts', parameters('automationAccountName'))]",
+      "metadata": {
+        "description": "Name of the action group created when alertEmailAddress is supplied."
+      }
+    },
+    "alertActionGroupShortName": {
+      "type": "string",
+      "defaultValue": "CostOptAlrt",
+      "maxLength": 12,
+      "metadata": {
+        "description": "Short name shown in SMS and email subjects. Azure caps this at 12 characters."
+      }
+    },
+    "alertOnJobStatuses": {
+      "type": "array",
+      "defaultValue": [
+        "Failed",
+        "Stopped",
+        "Suspended"
+      ],
+      "metadata": {
+        "description": "Job states that raise the alert. Failed on its own is not enough: a job killed\nby the 3-hour fair-share limit or cancelled by hand reports Stopped, and a runbook that throws\nunder the PowerShell Workflow engine lands in Suspended and retries before it ever reaches\nFailed."
+      }
+    },
+    "alertSeverity": {
+      "type": "int",
+      "defaultValue": 1,
+      "allowedValues": [
+        0,
+        1,
+        2,
+        3,
+        4
+      ],
+      "metadata": {
+        "description": "Alert severity: 0 critical, 1 error, 2 warning, 3 informational, 4 verbose."
+      }
     }
   },
   "variables": {
@@ -291,7 +352,10 @@
     "orderedModules": "[concat(filter(parameters('powerShellModules'), lambda('m', equals(lambdaVariables('m').name, 'Az.Accounts'))), filter(parameters('powerShellModules'), lambda('m', not(equals(lambdaVariables('m').name, 'Az.Accounts')))))]",
     "galleryRoot": "https://www.powershellgallery.com/api/v2/package",
     "computedStartTime": "[dateTimeAdd(format('{0}T{1}Z', parameters('baseTime'), parameters('scheduleTimeOfDay')), 'P1D')]",
-    "effectiveStartTime": "[if(empty(parameters('scheduleStartTime')), variables('computedStartTime'), parameters('scheduleStartTime'))]"
+    "effectiveStartTime": "[if(empty(parameters('scheduleStartTime')), variables('computedStartTime'), parameters('scheduleStartTime'))]",
+    "createActionGroup": "[and(and(parameters('enableFailureAlert'), empty(parameters('existingActionGroupId'))), not(empty(parameters('alertEmailAddress'))))]",
+    "alertActionGroupId": "[if(empty(parameters('existingActionGroupId')), if(variables('createActionGroup'), resourceId('Microsoft.Insights/actionGroups', parameters('alertActionGroupName')), ''), parameters('existingActionGroupId'))]",
+    "deployFailureAlert": "[and(parameters('enableFailureAlert'), not(empty(variables('alertActionGroupId'))))]"
   },
   "resources": [
     {
@@ -416,6 +480,81 @@
       ]
     },
     {
+      "condition": "[variables('createActionGroup')]",
+      "type": "Microsoft.Insights/actionGroups",
+      "apiVersion": "2023-01-01",
+      "name": "[parameters('alertActionGroupName')]",
+      "location": "global",
+      "tags": "[parameters('tags')]",
+      "properties": {
+        "groupShortName": "[parameters('alertActionGroupShortName')]",
+        "enabled": true,
+        "emailReceivers": [
+          {
+            "name": "primary",
+            "emailAddress": "[parameters('alertEmailAddress')]",
+            "useCommonAlertSchema": true
+          }
+        ]
+      }
+    },
+    {
+      "condition": "[variables('deployFailureAlert')]",
+      "type": "Microsoft.Insights/metricAlerts",
+      "apiVersion": "2018-03-01",
+      "name": "[format('{0}-job-failure', parameters('automationAccountName'))]",
+      "location": "global",
+      "tags": "[parameters('tags')]",
+      "properties": {
+        "description": "[format('A {0} job finished in a state other than Completed.', parameters('runbookName'))]",
+        "severity": "[parameters('alertSeverity')]",
+        "enabled": true,
+        "scopes": [
+          "[resourceId('Microsoft.Automation/automationAccounts', parameters('automationAccountName'))]"
+        ],
+        "evaluationFrequency": "PT5M",
+        "windowSize": "PT5M",
+        "autoMitigate": true,
+        "criteria": {
+          "odata.type": "Microsoft.Azure.Monitor.SingleResourceMultipleMetricCriteria",
+          "allOf": [
+            {
+              "name": "JobsNotSucceeded",
+              "criterionType": "StaticThresholdCriterion",
+              "metricNamespace": "Microsoft.Automation/automationAccounts",
+              "metricName": "TotalJob",
+              "operator": "GreaterThan",
+              "threshold": 0,
+              "timeAggregation": "Total",
+              "dimensions": [
+                {
+                  "name": "Status",
+                  "operator": "Include",
+                  "values": "[parameters('alertOnJobStatuses')]"
+                },
+                {
+                  "name": "Runbook",
+                  "operator": "Include",
+                  "values": [
+                    "[parameters('runbookName')]"
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        "actions": [
+          {
+            "actionGroupId": "[variables('alertActionGroupId')]"
+          }
+        ]
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Insights/actionGroups', parameters('alertActionGroupName'))]",
+        "[resourceId('Microsoft.Automation/automationAccounts', parameters('automationAccountName'))]"
+      ]
+    },
+    {
       "condition": "[parameters('assignSubscriptionRole')]",
       "type": "Microsoft.Resources/deployments",
       "apiVersion": "2022-09-01",
@@ -522,6 +661,27 @@
         "description": "Whether the runbook will run in report-only mode."
       },
       "value": "[parameters('dryRun')]"
+    },
+    "jobFailureAlertId": {
+      "type": "string",
+      "metadata": {
+        "description": "Resource ID of the job-failure alert rule, or empty when alerting is off."
+      },
+      "value": "[if(variables('deployFailureAlert'), resourceId('Microsoft.Insights/metricAlerts', format('{0}-job-failure', parameters('automationAccountName'))), '')]"
+    },
+    "alertActionGroupId": {
+      "type": "string",
+      "metadata": {
+        "description": "Action group the alert notifies, or empty when alerting is off."
+      },
+      "value": "[variables('alertActionGroupId')]"
+    },
+    "failureAlertStatus": {
+      "type": "string",
+      "metadata": {
+        "description": "Whether failure alerting actually deployed. Checked explicitly because\nenableFailureAlert on its own is not enough: with no email and no action group there is\nnowhere to send the alert, and it would otherwise be skipped silently."
+      },
+      "value": "[if(variables('deployFailureAlert'), 'Enabled', if(parameters('enableFailureAlert'), 'NOT DEPLOYED - supply alertEmailAddress or existingActionGroupId', 'Disabled - enableFailureAlert is false'))]"
     }
   }
 }
